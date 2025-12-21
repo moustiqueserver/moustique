@@ -1,12 +1,12 @@
 # 🦟 Moustique
 
-**The HTTP-native pub/sub broker that actually makes sense.**
+**A lightweight, high-performance message broker that speaks HTTP.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/badge/Go-1.15+-00ADD8?logo=go)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-Moustique is a lightweight, high-performance message broker that speaks HTTP. No special protocols, no complex setup—just simple HTTP requests for pub/sub messaging.
+Easy setup — just simple HTTP requests for pub/sub messaging.
 
 ## ✨ Why Moustique?
 
