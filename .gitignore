@@ -23,7 +23,6 @@ Thumbs.db
 *.log
 # Development files
 .git/
-.github/
 .gitignore
 .editorconfig
 .eslintrc*
