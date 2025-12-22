@@ -1,0 +1,39 @@
+# Test files
+tests/
+*.test.js
+*.spec.js
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development files
+.git/
+.github/
+.gitignore
+.editorconfig
+.eslintrc*
+.prettierrc*
+
+# Build artifacts
+node_modules/
+dist/
+build/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+npm-debug.log*
+.env
+.env.local
