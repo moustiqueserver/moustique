@@ -7,7 +7,6 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
 Moustique is a simple, fast, and lightweight pub/sub message broker that uses plain HTTP(S) for communication. 
-No WebSockets, no special protocols – just standard HTTP POST/PUT/GET.
 
 Perfect for:
 - Web applications needing real-time updates
@@ -17,9 +16,7 @@ Perfect for:
 
 ## ✨ Why Moustique?
 
-**Traditional MQTT brokers** require special client libraries, protocol knowledge, and often struggle with firewalls and proxies.
-
-**Moustique** uses plain HTTP, which means:
+**Moustique** is easy to use, lightweight and has great performance:
 
 - 🎯 **Simple integration** - Easy to use clients available for Go, Python, JavaScript, and even Perl
 - 🚀 **High performance** - Written in Go, handles thousands of concurrent connections
