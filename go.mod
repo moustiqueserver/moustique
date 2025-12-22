@@ -1,4 +1,5 @@
 module moustique
+//module github.com/moustiqueserver/moustique
 
 go 1.22.2
 

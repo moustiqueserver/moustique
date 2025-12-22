@@ -6,7 +6,14 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-Easy setup — just simple HTTP requests for pub/sub messaging.
+Moustique is a simple, fast, and lightweight pub/sub message broker that uses plain HTTP(S) for communication. 
+No WebSockets, no special protocols – just standard HTTP POST/PUT/GET.
+
+Perfect for:
+- Web applications needing real-time updates
+- Microservices communication
+- Home automation and IoT
+- Any system that wants pub/sub without the complexity of MQTT
 
 ## ✨ Why Moustique?
 
@@ -14,9 +21,7 @@ Easy setup — just simple HTTP requests for pub/sub messaging.
 
 **Moustique** uses plain HTTP, which means:
 
-- 🌐 **Works everywhere** - HTTP passes through firewalls, proxies, load balancers
-- 🔌 **No special clients needed** - Use `curl`, `fetch()`, or any HTTP library
-- 🎯 **Simple integration** - If you can make HTTP requests, you can use Moustique
+- 🎯 **Simple integration** - Easy to use clients available for Go, Python, JavaScript, and even Perl
 - 🚀 **High performance** - Written in Go, handles thousands of concurrent connections
 - 💾 **Persistent storage** - Messages survive restarts with SQLite backend
 - 🎨 **Built-in web UI** - Monitor and manage your broker from your browser
@@ -28,11 +33,11 @@ Easy setup — just simple HTTP requests for pub/sub messaging.
 
 ```bash
 # Download binary (Linux/macOS/Windows)
-curl -L https://github.com/yourusername/moustique/releases/latest/download/moustique-linux-amd64 -o moustique
+curl -L https://github.com/moustiqueserver/moustique/releases/latest/download/moustique-linux-amd64 -o moustique
 chmod +x moustique
 
 # Or build from source
-git clone https://github.com/yourusername/moustique.git
+git clone https://github.com/moustiqueserver/moustique.git
 cd moustique
 go build
 ```
@@ -48,30 +53,6 @@ go build
 
 # Generate default config
 ./moustique -generate-config
-```
-
-### Your first pub/sub in 30 seconds
-
-**Terminal 1 - Subscribe to messages:**
-```bash
-# Subscribe to temperature updates
-curl -X POST http://localhost:33334/SUBSCRIBE \
-  -d "topic=$(echo -n '/home/sensors/+/temperature' | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m')" \
-  -d "client=$(echo -n 'my-app' | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m')"
-```
-
-**Terminal 2 - Publish a message:**
-```bash
-curl -X POST http://localhost:33334/POST \
-  -d "topic=$(echo -n '/home/sensors/living-room/temperature' | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m')" \
-  -d "message=$(echo -n '22.5' | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m')" \
-  -d "from=$(echo -n 'temp-sensor-1' | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m')"
-```
-
-**Terminal 1 - Pick up messages:**
-```bash
-curl -X POST http://localhost:33334/PICKUP \
-  -d "client=$(echo -n 'my-app' | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m')"
 ```
 
 **Open web UI:**
@@ -132,7 +113,7 @@ client.Subscribe("/sensors/+/temperature", func(msg *client.Message) {
 client.Publish("/sensors/bedroom/temperature", "23.1")
 ```
 
-### Perl (included)
+### Perl
 ```perl
 use Moustique;
 
@@ -290,7 +271,7 @@ location /moustique/ {
 
 ## 🤝 Contributing
 
-We love contributions! Here's how to help:
+Contributions are welcome! Here's how to help:
 
 1. 🍴 Fork the repository
 2. 🌱 Create a feature branch (`git checkout -b feature/amazing`)
@@ -301,7 +282,7 @@ We love contributions! Here's how to help:
 ### Development Setup
 
 ```bash
-git clone https://github.com/yourusername/moustique.git
+git clone https://github.com/moustiqueserver/moustique.git
 cd moustique
 go build
 ./moustique -debug
@@ -325,14 +306,13 @@ Benchmarks on a modest server (4 CPU cores, 8GB RAM):
 - [x] Wildcard subscriptions
 - [x] Persistent storage
 - [x] Web UI
-- [ ] JavaScript/TypeScript client
-- [ ] Python client
-- [ ] Clustering support
+- [x] JavaScript/TypeScript client
+- [x] Python client
+- [x] Go client
+- [x] Java client
 - [ ] TLS/HTTPS support
 - [ ] Authentication plugins
-- [ ] Prometheus metrics
 - [ ] Message retention policies
-- [ ] WebSocket support
 
 ## 📜 License
 
@@ -340,9 +320,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-- Inspired by MQTT but simplified for HTTP
 - Built with love using Go
-- Special thanks to the Perl community for the original implementation
 
 ## 💬 Community
 
@@ -351,7 +329,5 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - 💡 [Feature Requests](https://github.com/yourusername/moustique/issues/new?template=feature_request.md)
 
 ---
-
-**Made with ❤️ by developers who were tired of complicated message brokers.**
 
 ⭐ **Star us on GitHub** if Moustique makes your life easier!

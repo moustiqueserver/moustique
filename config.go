@@ -56,6 +56,11 @@ func LoadConfig(path string) (*Config, error) {
 	config.Performance.PosterStatsTimeout = 1 * time.Hour
 	config.Performance.MaintenanceInterval = 30 * time.Second
 
+	// If /etc/moustique/config.yaml exists, use it as default
+	if _, err := os.Stat("/etc/moustique/config.yaml"); err == nil && path == "config.yaml" {
+		path = "/etc/moustique/config.yaml"
+		fmt.Println("Using system config file at %s", path)
+	}
 	// If config file doesn't exist, return defaults
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return config, nil
