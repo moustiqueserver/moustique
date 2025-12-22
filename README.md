@@ -2,6 +2,7 @@
 
 **A lightweight, high-performance message broker that speaks HTTP.**
 
+[![License](https://img.shields.io/github/license/moustiqueserver/moustique)](https://opensource.org/licenses/gpl3-0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)

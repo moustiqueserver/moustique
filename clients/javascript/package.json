@@ -6,7 +6,7 @@
   "type": "module",
   "keywords": ["moustique", "pubsub", "realtime", "http"],
   "author": "Moustique",
-  "license": "MIT",
+  "license": "GNU GPLv3",
   "scripts": {
     "test": "node tests/test_client.js"
   }

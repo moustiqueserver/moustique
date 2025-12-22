@@ -2,7 +2,7 @@
 
 **A lightweight, high-performance message broker that speaks HTTP.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/github/license/moustiqueserver/moustique)](GNU GPLv3)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
@@ -419,7 +419,7 @@ Benchmarks on a modest server (4 CPU cores, 8GB RAM):
 
 ## 📜 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+GNU GPLv3 License - see [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 

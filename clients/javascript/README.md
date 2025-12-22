@@ -1,6 +1,6 @@
 # Moustique JavaScript Client
 
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/github/license/yourusername/moustique)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-blue)
 ![Browser](https://img.shields.io/badge/browser-compatible-brightgreen)
 ![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-success)
@@ -115,4 +115,4 @@ node tests/test_client.js
 
 ## 📄 License
 
-MIT License – see the `LICENSE` file in the repository root.
+GNU GPLv3 License – see the `LICENSE` file in the repository root.
