@@ -1,7 +1,7 @@
 // clients/javascript/moustique/index.js
 
 class Moustique {
-    constructor({ ip = '192.168.1.79', port = '33334', clientName = '' } = {}) {
+    constructor({ ip = '127.0.0.1', port = '33335', clientName = '' } = {}) {
         this.ip = ip;
         this.port = port;
         this.baseUrl = `http://${ip}:${port}`;

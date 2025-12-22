@@ -17,7 +17,7 @@ pickup_intensity = 1
 name = "NONAME"
 
 class Moustique:
-    def __init__(self, ip: str = "192.168.1.79", port: str = "33334", client_name: str = ""):
+    def __init__(self, ip: str = "127.0.0.1", port: str = "33335", client_name: str = ""):
         self.pid = os.getpid()
         hostname = socket.gethostname()
         self.name = f"{hostname}-{client_name}-{int(os.urandom(1)[0] % 100)}-{self.pid}" if client_name else f"{hostname}-{int(os.urandom(1)[0] % 100)}-{self.pid}"
@@ -237,7 +237,7 @@ def message_callback(topic: str, message: str, from_name: str):
     print(f"Mottaget meddelande på ämne '{topic}': {message} från {from_name}")
 
 def main():
-    client = Moustique(ip="192.168.1.79", port="33334", client_name="TestClient")
+    client = Moustique(ip="127.0.0.1", port="33335", client_name="TestClient")
     print(f"Klientnamn: {client.get_client_name()}")
 
     try:
@@ -246,7 +246,7 @@ def main():
         time.sleep(1)
 
         print("\nTest 2: Sätter ett värde med putval...")
-        client.putval("192.168.1.79", "33334", "/test/value", "42", client.get_client_name())
+        client.putval("127.0.0.1", "33335", "/test/value", "42", client.get_client_name())
         time.sleep(1)
 
         print("\nTest 3: Hämtar ett värde med getval...")
@@ -268,12 +268,12 @@ def main():
         client.resubscribe()
 
         print("\nTest 6: Hämtar serverinformation...")
-        version = getversion("192.168.1.79", "33334", "1Delmataren")  # Ersätt "password" med rätt lösenord
+        version = getversion("127.0.0.1", "33335", "1Delmataren")  # Ersätt "password" med rätt lösenord
         print(f"Serverversion: {version}")
-        stats = getstats("192.168.1.79", "33334", "1Delmataren")
+        stats = getstats("127.0.0.1", "33335", "1Delmataren")
         print(f"Serverstatistik: {stats}")
     except requests.exceptions.ConnectionError as e:
-        print(f"Anslutningsfel: {e}. Är servern igång på 192.168.1.79:33334?")
+        print(f"Anslutningsfel: {e}. Är servern igång på 127.0.0.1:33335?")
     except Exception as e:
         print(f"Ett oväntat fel uppstod: {e}")
 

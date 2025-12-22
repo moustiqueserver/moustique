@@ -43,7 +43,7 @@ type Config struct {
 func LoadConfig(path string) (*Config, error) {
 	// Set defaults
 	config := &Config{}
-	config.Server.Port = 33334
+	config.Server.Port = 33335
 	config.Server.Host = "0.0.0.0"
 	config.Server.Timeout = 5 * time.Second
 	config.Server.MaxConnections = 1000
@@ -97,7 +97,7 @@ func SaveConfig(path string, config *Config) error {
 // GenerateDefaultConfig creates a default config.yaml file
 func GenerateDefaultConfig(path string) error {
 	config := &Config{}
-	config.Server.Port = 33334
+	config.Server.Port = 33335
 	config.Server.Host = "0.0.0.0"
 	config.Server.Timeout = 5 * time.Second
 	config.Server.MaxConnections = 1000

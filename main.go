@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	DefaultPort    = 33334
+	DefaultPort    = 33335
 	DefaultTimeout = 5 * time.Second
 )
 

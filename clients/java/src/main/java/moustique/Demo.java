@@ -4,7 +4,7 @@ import java.util.concurrent.TimeUnit;
 
 public class Demo {
     public static void main(String[] args) throws Exception {
-        MoustiqueClient client = new MoustiqueClient("192.168.1.79", "33334", "JavaDemo");
+        MoustiqueClient client = new MoustiqueClient("127.0.0.1", "33335", "JavaDemo");
 
         client.subscribe("/test/topic", msg -> {
             System.out.println("[JAVA] " + msg.topic() + ": " + msg.message() + " (from " + msg.from() + ")");

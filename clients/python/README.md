@@ -427,9 +427,9 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 💬 Community
 
-- 📣 [Discussions](https://github.com/yourusername/moustique/discussions)
-- 🐛 [Issue Tracker](https://github.com/yourusername/moustique/issues)
-- 💡 [Feature Requests](https://github.com/yourusername/moustique/issues/new?template=feature_request.md)
+- 📣 [Discussions](https://github.com/moustiqueserver/moustique/discussions)
+- 🐛 [Issue Tracker](https://github.com/moustiqueserver/moustique/issues)
+- 💡 [Feature Requests](https://github.com/moustiqueserver/moustique/issues/new?template=feature_request.md)
 
 ---
 

@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	c := moustique.New("192.168.1.79", "33334", "GoDemo")
+	c := moustique.New("127.0.0.1", "33335", "GoDemo")
 
 	c.Subscribe("/test/topic", func(topic, message, from string) {
 		fmt.Printf("[GO] %s: %s (från %s)\n", topic, message, from)

@@ -19,3 +19,18 @@ __pycache__/
 #OS
 .DS_Store
 Thumbs.db
+# Logs
+*.log
+# Development files
+.git/
+.github/
+.gitignore
+.editorconfig
+.eslintrc*
+.prettierrc*
+
+# Build artifacts
+node_modules/
+dist/
+build/
+

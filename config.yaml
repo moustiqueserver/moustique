@@ -1,5 +1,5 @@
 server:
-  port: 33334
+  port: 33335
   host: 0.0.0.0
   timeout: 5s
   max_connections: 1000

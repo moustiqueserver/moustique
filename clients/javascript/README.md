@@ -53,8 +53,8 @@ cd moustique/clients/javascript
 import { Moustique } from './moustique/index.js';
 
 const client = new Moustique({
-  ip: '192.168.1.79',
-  port: '33334',
+  ip: '127.0.0.1',
+  port: '33335',
   clientName: 'MyNodeApp'
 });
 
