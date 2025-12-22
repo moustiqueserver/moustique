@@ -5,7 +5,7 @@
   "main": "moustique/index.js",
   "type": "module",
   "keywords": ["moustique", "pubsub", "realtime", "http"],
-  "author": "Ditt namn",
+  "author": "Moustique",
   "license": "MIT",
   "scripts": {
     "test": "node tests/test_client.js"
