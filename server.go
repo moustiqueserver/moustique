@@ -184,6 +184,11 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 
 	s.broker.mu.Lock()
 	s.broker.requestCount++
+	if s.broker.minuteRequestCountTimestamp == 0 || time.Now().Unix()-s.broker.minuteRequestCountTimestamp > 60 {
+		s.broker.minuteRequestCountTimestamp = time.Now().Unix()
+		s.broker.minuteRequestCount = 0
+	}
+	s.broker.minuteRequestCount++
 	s.broker.mu.Unlock()
 
 	// Parse form data

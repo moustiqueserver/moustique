@@ -43,24 +43,32 @@ type Provider struct {
 
 // Broker manages message routing and subscriptions
 type Broker struct {
-	mu                  sync.RWMutex
-	logger              *log.Logger
-	db                  *Database
-	debug               bool
-	messageQueue        map[string]map[string][]*Message
-	systemMessageQueue  map[string][]*Message
-	subscriptions       map[string][]string
-	clients             map[string]*Client
-	providers           map[string]*Provider
-	topicExplosionCache map[string][]string
-	messageCount        int64
-	pickupCount         int64
-	getvalCount         int64
-	requestCount        int64
-	serveTime           float64
-	startedTime         int64
-	messageQueueTimeout time.Duration
-	posterStatsTimeout  time.Duration
+	mu                          sync.RWMutex
+	logger                      *log.Logger
+	db                          *Database
+	debug                       bool
+	messageQueue                map[string]map[string][]*Message
+	systemMessageQueue          map[string][]*Message
+	subscriptions               map[string][]string
+	clients                     map[string]*Client
+	providers                   map[string]*Provider
+	topicExplosionCache         map[string][]string
+	messageCount                int64
+	minuteMessageCount          int64
+	pickupCount                 int64
+	getvalCount                 int64
+	requestCount                int64
+	minuteRequestCount          int64
+	serveTime                   float64
+	startedTime                 int64
+	messageQueueTimeout         time.Duration
+	posterStatsTimeout          time.Duration
+	minuteRequestCountTimestamp int64
+	minuteMessageCountTimestamp int64
+	minutePickupCount           int64
+	minuteGetvalCount           int64
+	minutePickupCountTimestamp  int64
+	minuteGetvalCountTimestamp  int64
 }
 
 // NewBroker creates a new message broker
@@ -136,6 +144,11 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	if b.messageCount%1000 == 0 {
 		b.logger.Printf("%s Processed %d messages", formatNiceDateTime(time.Now().Unix()), b.messageCount)
 	}
+	if b.minuteMessageCountTimestamp == 0 || time.Now().Unix()-b.minuteMessageCountTimestamp > 60 {
+		b.minuteMessageCountTimestamp = time.Now().Unix()
+		b.minuteMessageCount = 0
+	}
+	b.minuteMessageCount++
 
 	if from == "" {
 		from = "UNKNOWN"
@@ -195,6 +208,11 @@ func (b *Broker) Pickup(clientName string) (map[string][]*Message, error) {
 	defer b.mu.Unlock()
 
 	b.pickupCount++
+	if b.minutePickupCountTimestamp == 0 || time.Now().Unix()-b.minutePickupCountTimestamp > 60 {
+		b.minutePickupCountTimestamp = time.Now().Unix()
+		b.minutePickupCount = 0
+	}
+	b.minutePickupCount++
 
 	normalMessages := b.messageQueue[clientName]
 
@@ -236,6 +254,11 @@ func (b *Broker) GetValue(key string) (*Message, error) {
 	defer b.mu.RUnlock()
 
 	b.getvalCount++
+	if b.minuteGetvalCountTimestamp == 0 || time.Now().Unix()-b.minuteGetvalCountTimestamp > 60 {
+		b.minuteGetvalCountTimestamp = time.Now().Unix()
+		b.minuteGetvalCount = 0
+	}
+	b.minuteGetvalCount++
 
 	value, err := b.db.GetValue(key)
 	if err != nil {
@@ -323,19 +346,23 @@ func (b *Broker) GetStats() map[string]interface{} {
 			"posters":     len(b.providers),
 		},
 		"requests": map[string]interface{}{
-			"per_second": float64(b.requestCount) / float64(secsRunning),
-			"total":      b.requestCount,
+			"per_second":             float64(b.requestCount) / float64(secsRunning),
+			"per_second_last_minute": float64(b.minuteRequestCount) / float64(time.Now().Unix()-b.minuteRequestCountTimestamp),
+			"total":                  b.requestCount,
 			"pickups": map[string]interface{}{
-				"per_second": float64(b.pickupCount) / float64(secsRunning),
-				"total":      b.pickupCount,
+				"per_second":             float64(b.pickupCount) / float64(secsRunning),
+				"per_second_last_minute": float64(b.minutePickupCount) / float64(time.Now().Unix()-b.minutePickupCountTimestamp),
+				"total":                  b.pickupCount,
 			},
 			"processed": map[string]interface{}{
-				"per_second": float64(b.messageCount) / float64(secsRunning),
-				"total":      b.messageCount,
+				"per_second":             float64(b.messageCount) / float64(secsRunning),
+				"per_second_last_minute": float64(b.minuteMessageCount) / float64(time.Now().Unix()-b.minuteMessageCountTimestamp),
+				"total":                  b.messageCount,
 			},
 			"getvals": map[string]interface{}{
-				"per_second": float64(b.getvalCount) / float64(secsRunning),
-				"total":      b.getvalCount,
+				"per_second":             float64(b.getvalCount) / float64(secsRunning),
+				"per_second_last_minute": float64(b.minuteGetvalCount) / float64(time.Now().Unix()-b.minuteGetvalCountTimestamp),
+				"total":                  b.getvalCount,
 			},
 		},
 	}

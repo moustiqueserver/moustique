@@ -734,9 +734,9 @@
                 const stats = JSON.parse(decoded);
 
                 document.getElementById('total-requests').textContent = stats.requests.total.toLocaleString();
-                document.getElementById('req-per-sec').textContent = stats.requests.per_second.toFixed(2) + ' req/s';
+                document.getElementById('req-per-sec').textContent = stats.requests.per_second_last_minute.toFixed(2) + ' req/s';
                 document.getElementById('total-messages').textContent = stats.requests.processed.total.toLocaleString();
-                document.getElementById('msg-per-sec').textContent = stats.requests.processed.per_second.toFixed(2) + ' msg/s';
+                document.getElementById('msg-per-sec').textContent = stats.requests.processed.per_second_last_minute.toFixed(2) + ' msg/s';
                 document.getElementById('active-clients').textContent = stats.clients.subscribers.toLocaleString();
                 document.getElementById('active-posters').textContent = stats.clients.posters.toLocaleString() + ' posters';
                 document.getElementById('total-topics').textContent = stats.subscription_count.toLocaleString();
