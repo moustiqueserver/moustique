@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moustique JavaScript Client – Browser Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 2rem auto; padding: 1rem; }
+        h1 { color: #333; }
+        .log { background: #f5f5f5; padding: 1rem; border-radius: 8px; height: 400px; overflow-y: auto; margin: 1rem 0; }
+        input, button { padding: 0.5rem; font-size: 1rem; }
+        button { background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .status { font-weight: bold; color: green; }
+    </style>
+</head>
+<body>
+<h1>Moustique – Browser Demo</h1>
+<p>Connects to your Moustique server and demonstrates real-time pub/sub directly in the browser.</p>
+
+<div class="status" id="status">Connecting...</div>
+
+<div>
+    <input type="text" id="topic" placeholder="Topic (default: /test/topic)" value="/test/topic" style="width: 300px;">
+    <input type="text" id="message" placeholder="Your message">
+    <button id="send">Publish</button>
+</div>
+
+<h2>Received messages:</h2>
+<div class="log" id="log"></div>
+
+<script type="module">
+    import { Moustique } from '../moustique/index.js';
+
+    const client = new Moustique({
+        ip: '127.0.0.1',     // Change to your server IP
+        port: '33335',          // Change to your server port
+        clientName: 'BrowserDemo'
+    });
+
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+
+    function log(message) {
+        const time = new Date().toLocaleTimeString();
+        logEl.innerHTML += `<div>[${time}] ${message}</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    statusEl.textContent = `Connected as ${client.getClientName()}`;
+
+    // Subscribe to the topic
+    const topicInput = document.getElementById('topic');
+    client.subscribe(topicInput.value, (topic, message, from) => {
+        log(`<strong>${topic}</strong>: ${message} <em>(from ${from})</em>`);
+    });
+
+    // Publish button
+    document.getElementById('send').addEventListener('click', () => {
+        const topic = topicInput.value.trim() || '/test/topic';
+        const message = document.getElementById('message').value.trim();
+        if (message) {
+            client.publish(topic, message);
+            log(`→ Published to ${topic}: ${message}`);
+            document.getElementById('message').value = '';
+        }
+    });
+
+    // Auto-pickup every second
+    setInterval(() => client.pickup(), 1000);
+
+    log('Browser client ready – send a message or publish from another client!');
+</script>
+</body>
+</html>

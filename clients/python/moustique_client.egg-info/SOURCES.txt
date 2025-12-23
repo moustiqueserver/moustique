@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+setup.py
+moustique/__init__.py
+moustique/client.py
+moustique_client.egg-info/PKG-INFO
+moustique_client.egg-info/SOURCES.txt
+moustique_client.egg-info/dependency_links.txt
+moustique_client.egg-info/requires.txt
+moustique_client.egg-info/top_level.txt
+tests/test_client.py

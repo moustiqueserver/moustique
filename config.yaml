@@ -1,0 +1,21 @@
+server:
+  port: 33335
+  host: 0.0.0.0
+  timeout: 5s
+  max_connections: 1000
+database:
+  path: /opt/data/mousqlite.db
+security:
+  allowed_ips:
+  - 192.168.0.0/16
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  tailscale_enabled: true
+  password_file: ./data/.moustique_pwd
+logging:
+  level: debug
+  file: /var/tmp/log/moustique.log
+performance:
+  message_queue_timeout: 5m0s
+  poster_stats_timeout: 1h0m0s
+  maintenance_interval: 30s

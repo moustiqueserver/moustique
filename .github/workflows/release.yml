@@ -1,0 +1,135 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build binaries
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          
+          # Linux AMD64
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ steps.get_version.outputs.VERSION }}" -o dist/moustique-linux-amd64 .
+          
+          # Linux ARM64
+          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=${{ steps.get_version.outputs.VERSION }}" -o dist/moustique-linux-arm64 .
+          
+          # Linux ARM (32-bit)
+          GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w -X main.version=${{ steps.get_version.outputs.VERSION }}" -o dist/moustique-linux-arm .
+          
+          # macOS AMD64
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ steps.get_version.outputs.VERSION }}" -o dist/moustique-darwin-amd64 .
+          
+          # macOS ARM64 (M1/M2)
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X main.version=${{ steps.get_version.outputs.VERSION }}" -o dist/moustique-darwin-arm64 .
+          
+          # Windows AMD64
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ steps.get_version.outputs.VERSION }}" -o dist/moustique-windows-amd64.exe .
+          
+          # Windows ARM64
+          GOOS=windows GOARCH=arm64 go build -ldflags="-s -w -X main.version=${{ steps.get_version.outputs.VERSION }}" -o dist/moustique-windows-arm64.exe .
+      
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/moustique-*
+            dist/checksums.txt
+          body: |
+            ## Moustique v${{ steps.get_version.outputs.VERSION }}
+            
+            ### Installation
+            
+            **Quick Install (Linux/macOS):**
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+            ```
+            
+            **Linux (AMD64):**
+            ```bash
+            curl -L https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/moustique-linux-amd64 -o moustique
+            chmod +x moustique
+            sudo mv moustique /usr/local/bin/
+            ```
+            
+            **macOS (Intel):**
+            ```bash
+            curl -L https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/moustique-darwin-amd64 -o moustique
+            chmod +x moustique
+            sudo mv moustique /usr/local/bin/
+            ```
+            
+            **macOS (Apple Silicon):**
+            ```bash
+            curl -L https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/moustique-darwin-arm64 -o moustique
+            chmod +x moustique
+            sudo mv moustique /usr/local/bin/
+            ```
+            
+            **Windows (PowerShell):**
+            ```powershell
+            Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/moustique-windows-amd64.exe" -OutFile "moustique.exe"
+            ```
+            
+            ### Available Binaries
+            - `moustique-linux-amd64` - Linux 64-bit
+            - `moustique-linux-arm64` - Linux ARM 64-bit (Raspberry Pi 4, etc.)
+            - `moustique-linux-arm` - Linux ARM 32-bit (Raspberry Pi 3, etc.)
+            - `moustique-darwin-amd64` - macOS Intel
+            - `moustique-darwin-arm64` - macOS Apple Silicon (M1/M2/M3)
+            - `moustique-windows-amd64.exe` - Windows 64-bit
+            - `moustique-windows-arm64.exe` - Windows ARM 64-bit
+            
+            ### Verify Download (Optional)
+            ```bash
+            # Download checksum file
+            curl -L https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/checksums.txt -o checksums.txt
+            
+            # Verify (Linux/macOS)
+            sha256sum -c checksums.txt --ignore-missing
+            
+            # Verify (Windows PowerShell)
+            Get-FileHash moustique-windows-amd64.exe -Algorithm SHA256
+            ```
+            
+            ### Usage
+            ```bash
+            # Start server
+            moustique --port 33335
+            
+            # With password protection
+            moustique --port 33335 --password secret
+            
+            # Show help
+            moustique --help
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

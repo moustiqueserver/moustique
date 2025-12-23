@@ -1,0 +1,37 @@
+#Go
+/bin
+/moustique_server
+/moustique_client
+*.exe
+#Java
+/clients/java/target/
+#Node
+/clients/javascript/node_modules/
+#Python
+pycache
+__pycache__/
+*.pyc
+#IDE
+.idea
+.vscode
+*.swp
+*.swo
+#OS
+.DS_Store
+Thumbs.db
+# Logs
+*.log
+# Development files
+.git/
+.gitignore
+.editorconfig
+.eslintrc*
+.prettierrc*
+
+# Build artifacts
+node_modules/
+dist/
+build/
+
+clients/javascript/.npmrc
+**/.npmrc
