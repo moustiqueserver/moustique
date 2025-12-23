@@ -47,12 +47,14 @@ func main() {
 	}
 
 	// Öka file descriptor limit (Linux)
-	var rLimit syscall.Rlimit
-	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit); err == nil {
-		rLimit.Cur = rLimit.Max
-		syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
-		log.Printf("Set file descriptor limit to %d", rLimit.Cur)
-	}
+	/*
+		var rLimit syscall.Rlimit
+		if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit); err == nil {
+			rLimit.Cur = rLimit.Max
+			syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+			log.Printf("Set file descriptor limit to %d", rLimit.Cur)
+		}
+	*/
 
 	// Setup logger
 	var logOutput io.Writer = os.Stderr // default
