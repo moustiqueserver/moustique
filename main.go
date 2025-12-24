@@ -1,4 +1,4 @@
-// main.go
+// main.go - Multi-tenant version with fixes
 package main
 
 import (
@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -18,10 +19,14 @@ const (
 	DefaultTimeout = 5 * time.Second
 )
 
+var version = "1.0.0-multitenant"
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "Path to config file")
 	generateConfig := flag.Bool("generate-config", false, "Generate default config file")
 	debug := flag.Bool("debug", false, "Enable debug logging")
+	addUser := flag.String("add-user", "", "Add user (format: username:password)")
+	listUsers := flag.Bool("list-users", false, "List all users")
 	flag.Parse()
 
 	// Generate config if requested
@@ -31,6 +36,10 @@ func main() {
 		}
 		log.Printf("Generated default config at %s", *configPath)
 		return
+	}
+
+	if _, err := os.Stat("/etc/moustique/config.yaml"); err == nil {
+		*configPath = "/etc/moustique/config.yaml"
 	}
 
 	// Load config
@@ -46,23 +55,13 @@ func main() {
 		*debug = config.Logging.Level == "debug"
 	}
 
-	// Öka file descriptor limit (Linux)
-	/*
-		var rLimit syscall.Rlimit
-		if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit); err == nil {
-			rLimit.Cur = rLimit.Max
-			syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
-			log.Printf("Set file descriptor limit to %d", rLimit.Cur)
-		}
-	*/
-
 	// Setup logger
-	var logOutput io.Writer = os.Stderr // default
+	var logOutput io.Writer = os.Stderr
 
 	if config.Logging.File != "" {
 		file, err := os.OpenFile(config.Logging.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Kunde inte öppna loggfil %s: %v\n", config.Logging.File, err)
+			fmt.Fprintf(os.Stderr, "Could not open log file %s: %v\n", config.Logging.File, err)
 		} else {
 			logOutput = file
 		}
@@ -72,31 +71,73 @@ func main() {
 
 	logger := log.New(logOutput, "[moustique] ", log.LstdFlags)
 
-	version, err := GetFileVersion()
+	fileVersion, err := GetFileVersion()
 	if err != nil {
-		logger.Fatalf("Could not calculate file version: %v", err)
+		logger.Printf("Warning: Could not calculate file version: %v", err)
+		fileVersion = version
 	}
 
-	// Initialize database
-	//db, err := NewDatabase("/opt/data/mousqlite.db")
-	db, err := NewDatabase(config.Database.Path)
+	// Initialize data directory
+	dataDir := config.Database.Path
+	if dataDir == "" {
+		dataDir = "./data"
+	}
+
+	// Ensure data directory exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		logger.Fatalf("Failed to create data directory: %v", err)
+	}
+
+	// Check if public access is allowed
+	allowPublic := false
+	if config.Server.AllowPublic != nil {
+		allowPublic = *config.Server.AllowPublic
+	}
+
+	// Initialize server with multi-tenant support
+	server, err := NewServer(
+		config.Server.Port,
+		config.Server.Timeout,
+		logger,
+		dataDir,
+		*debug,
+		fileVersion,
+		allowPublic,
+	)
 	if err != nil {
-		logger.Fatalf("Failed to initialize database: %v", err)
-	}
-	defer db.Close()
-
-	// Load values from database
-	logger.Println("Loading data from database...")
-	if err := db.LoadAll(); err != nil {
-		logger.Printf("Warning: Failed to load values: %v", err)
+		logger.Fatalf("Failed to create server: %v", err)
 	}
 
-	// Initialize broker
-	broker := NewBroker(logger, db, *debug)
+	// Handle list users
+	if *listUsers {
+		// Load user auth to list users
+		logger.Println("Registered users:")
+		// This would require exposing the user list from UserAuth
+		logger.Println("(User listing feature - implement if needed)")
+		return
+	}
 
-	// Initialize server
-	//server := NewServer(*port, DefaultTimeout, logger, broker, *debug, version)
-	server := NewServer(config.Server.Port, config.Server.Timeout, logger, broker, *debug, version)
+	// Handle user management
+	if *addUser != "" {
+		// Parse username:password
+		parts := strings.SplitN(*addUser, ":", 2)
+		if len(parts) != 2 {
+			logger.Fatalf("Invalid format. Use: username:password")
+		}
+		if err := server.AddUser(parts[0], parts[1]); err != nil {
+			logger.Fatalf("Failed to add user: %v", err)
+		}
+		logger.Printf("User added successfully: %s", parts[0])
+		return
+	}
+
+	// Add demo users in debug mode
+	if *debug {
+		server.AddUser("demo", "demo123")
+		server.AddUser("alice", "alice123")
+		server.AddUser("bob", "bob123")
+		logger.Println("Debug mode: Added demo users (demo/demo123, alice/alice123, bob/bob123)")
+	}
 
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -113,9 +154,6 @@ func main() {
 		}
 	}()
 
-	// Start maintenance routines
-	go broker.StartMaintenance(ctx)
-
 	// Wait for shutdown signal
 	sig := <-sigChan
 	logger.Printf("Received signal %v - shutting down gracefully...", sig)
@@ -127,15 +165,16 @@ func main() {
 	logger.Println("Waiting for active requests to complete...")
 	time.Sleep(time.Second)
 
-	// Save database - KRITISKT STEG
-	logger.Println("Saving database to disk...")
+	// Save all user databases
+	logger.Println("Saving all databases...")
 	startSave := time.Now()
-	if err := db.SaveAll(); err != nil {
-		logger.Printf("CRITICAL ERROR: Failed to save database: %v", err)
-		logger.Println("Data may be lost!")
+
+	if err := server.brokerManager.SaveAll(); err != nil {
+		logger.Printf("ERROR: Failed to save databases: %v", err)
+		logger.Println("Some data may be lost!")
 		os.Exit(1)
 	}
-	logger.Printf("Database saved successfully in %v", time.Since(startSave))
 
+	logger.Printf("All databases saved successfully in %v", time.Since(startSave))
 	logger.Println("Shutdown complete")
 }

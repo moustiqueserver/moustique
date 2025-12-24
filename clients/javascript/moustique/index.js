@@ -1,11 +1,13 @@
 // clients/javascript/moustique/index.js
 
 class Moustique {
-    constructor({ ip = '127.0.0.1', port = '33335', clientName = '' } = {}) {
+    constructor({ ip = '127.0.0.1', port = '33335', clientName = '', username = null, password = null } = {}) {
         this.ip = ip;
         this.port = port;
         this.baseUrl = `http://${ip}:${port}`;
         this.clientName = clientName || `${this._getHostname()}-${Math.floor(Math.random() * 100)}-${Date.now()}`;
+        this.username = username;
+        this.password = password;
         this.callbacks = new Map();
         this.systemCallbacks = new Map();
         this.systemCallbacks.set('/server/action/resubscribe', () => this.resubscribe());
@@ -39,15 +41,23 @@ class Moustique {
         return new Date().toISOString().replace('T', ' ').substring(0, 19);
     }
 
+    _addAuth(payload) {
+        if (this.username && this.password) {
+            payload.username = Moustique.enc(this.username);
+            payload.password = Moustique.enc(this.password);
+        }
+        return payload;
+    }
+
     async publish(topic, message) {
         const url = `${this.baseUrl}/POST`;
-        const payload = {
+        const payload = this._addAuth({
             topic: Moustique.enc(topic),
             message: Moustique.enc(message),
             updated_time: Moustique.enc(Math.floor(Date.now() / 1000).toString()),
             updated_nicedatetime: Moustique.enc(Moustique.getNiceDateTime()),
             from: Moustique.enc(this.clientName)
-        };
+        });
 
         try {
             const res = await fetch(url, {
@@ -67,13 +77,13 @@ class Moustique {
 
     async putval(topic, message) {
         const url = `${this.baseUrl}/PUTVAL`;
-        const payload = {
+        const payload = this._addAuth({
             valname: Moustique.enc(topic),
             val: Moustique.enc(message),
             updated_time: Moustique.enc(Math.floor(Date.now() / 1000).toString()),
             updated_nicedatetime: Moustique.enc(Moustique.getNiceDateTime()),
             from: Moustique.enc(this.clientName)
-        };
+        });
 
         try {
             const res = await fetch(url, {
@@ -93,10 +103,10 @@ class Moustique {
 
     async subscribe(topic, callback) {
         const url = `${this.baseUrl}/SUBSCRIBE`;
-        const payload = {
+        const payload = this._addAuth({
             topic: Moustique.enc(topic),
             client: Moustique.enc(this.clientName)
-        };
+        });
 
         try {
             const res = await fetch(url, {
@@ -115,7 +125,7 @@ class Moustique {
 
     async pickup() {
         const url = `${this.baseUrl}/PICKUP`;
-        const payload = { client: Moustique.enc(this.clientName) };
+        const payload = this._addAuth({ client: Moustique.enc(this.clientName) });
 
         try {
             const res = await fetch(url, {

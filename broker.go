@@ -45,6 +45,8 @@ type Provider struct {
 type Broker struct {
 	mu                          sync.RWMutex
 	logger                      *log.Logger
+	userLogger                  *log.Logger
+	userLogPath                 string
 	db                          *Database
 	debug                       bool
 	messageQueue                map[string]map[string][]*Message
@@ -69,12 +71,16 @@ type Broker struct {
 	minuteGetvalCount           int64
 	minutePickupCountTimestamp  int64
 	minuteGetvalCountTimestamp  int64
+	messagesProcessed           int64
 }
 
 // NewBroker creates a new message broker
 func NewBroker(logger *log.Logger, db *Database, debug bool) *Broker {
+	fmt.Printf("Creating new Broker instance\n")
 	return &Broker{
 		logger:              logger,
+		userLogger:          nil,
+		userLogPath:         "",
 		db:                  db,
 		debug:               debug,
 		messageQueue:        make(map[string]map[string][]*Message),
@@ -87,6 +93,28 @@ func NewBroker(logger *log.Logger, db *Database, debug bool) *Broker {
 		posterStatsTimeout:  1 * time.Hour,
 		startedTime:         time.Now().Unix(),
 	}
+}
+
+// SetUserLogger sets up user-specific logging
+func (b *Broker) SetUserLogger(userLogger *log.Logger, logPath string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.userLogger = userLogger
+	b.userLogPath = logPath
+}
+
+// LogUser logs to the user-specific log
+func (b *Broker) LogUser(format string, v ...interface{}) {
+	if b.userLogger != nil {
+		b.userLogger.Printf(format, v...)
+	}
+}
+
+// GetUserLogPath returns the path to the user log file
+func (b *Broker) GetUserLogPath() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.userLogPath
 }
 
 // Subscribe adds a client subscription to a topic
@@ -113,10 +141,12 @@ func (b *Broker) Subscribe(topic, clientName string) error {
 		if b.debug {
 			b.logger.Printf("New client: %s", clientName)
 		}
+		b.LogUser("New client: %s", clientName)
 	}
 
 	if !contains(b.subscriptions[topic], clientName) {
 		b.subscriptions[topic] = append(b.subscriptions[topic], clientName)
+		b.LogUser("Client %s subscribed to topic: %s", clientName, topic)
 	}
 
 	if b.messageQueue[clientName] == nil {
@@ -140,6 +170,7 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	b.messagesProcessed++
 	b.messageCount++
 	if b.messageCount%1000 == 0 {
 		b.logger.Printf("%s Processed %d messages", formatNiceDateTime(time.Now().Unix()), b.messageCount)
@@ -149,6 +180,8 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 		b.minuteMessageCount = 0
 	}
 	b.minuteMessageCount++
+
+	b.LogUser("Published message to %s from %s (IP: %s)", topic, from, ip)
 
 	if from == "" {
 		from = "UNKNOWN"
@@ -332,8 +365,29 @@ func (b *Broker) GetStats() map[string]interface{} {
 	if secsRunning == 0 {
 		secsRunning = 1
 	}
+	if b.requestCount == 0 {
+		b.requestCount = 1
+	}
+	if b.minuteRequestCountTimestamp == 0 {
+		b.minuteRequestCountTimestamp = now
+	}
+	if b.minuteMessageCountTimestamp == 0 {
+		b.minuteMessageCountTimestamp = now
+	}
+	if b.minutePickupCountTimestamp == 0 {
+		b.minutePickupCountTimestamp = now
+	}
+	if b.minuteGetvalCountTimestamp == 0 {
+		b.minuteGetvalCountTimestamp = now
+	}
 
 	numGoroutines := runtime.NumGoroutine()
+
+	// Count stored values
+	valuesCount := 0
+	if b.db != nil {
+		valuesCount = b.db.CountValues()
+	}
 
 	return map[string]interface{}{
 		"started":              formatNiceDateTime(b.startedTime),
@@ -341,6 +395,7 @@ func (b *Broker) GetStats() map[string]interface{} {
 		"subscription_count":   len(b.subscriptions),
 		"goroutines":           numGoroutines,
 		"average_request_time": b.serveTime / float64(b.requestCount),
+		"values":               valuesCount,
 		"clients": map[string]interface{}{
 			"subscribers": len(b.messageQueue),
 			"posters":     len(b.providers),

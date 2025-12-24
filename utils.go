@@ -5,10 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"io"
+	"net/url"
 	"os"
-	"strings"
 )
 
+/*
 // decodeROT13Base64 decodes the ROT13+Base64 encoding used by moustique_client
 func decodeROT13Base64(encoded string) string {
 	if encoded == "" {
@@ -68,6 +69,45 @@ func decodeParams(params map[string][]string) map[string]string {
 		}
 	}
 	return result
+}
+*/
+
+func rot13(s string) string {
+	var result []rune
+	for _, r := range s {
+		if 'a' <= r && r <= 'z' {
+			result = append(result, 'a'+(r-'a'+13)%26)
+		} else if 'A' <= r && r <= 'Z' {
+			result = append(result, 'A'+(r-'A'+13)%26)
+		} else {
+			result = append(result, r)
+		}
+	}
+	return string(result)
+}
+
+// encodeROT13Base64: Först ROT13 → sedan Base64
+func encodeROT13Base64(text string) string {
+	rot13Text := rot13(text)
+	return base64.StdEncoding.EncodeToString([]byte(rot13Text))
+}
+
+func decodeROT13Base64(encoded string) string {
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return encoded // fallback vid fel
+	}
+	return rot13(string(decoded))
+}
+
+func decodeParams(values url.Values) map[string]string {
+	params := make(map[string]string)
+	for key, vals := range values {
+		if len(vals) > 0 {
+			params[key] = decodeROT13Base64(vals[0])
+		}
+	}
+	return params
 }
 
 func GetFileVersion() (string, error) {

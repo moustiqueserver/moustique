@@ -17,6 +17,8 @@ type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
 	ClientName string
+	Username   string
+	Password   string
 
 	mu        sync.Mutex
 	callbacks map[string][]func(topic, message, from string)
@@ -28,29 +30,52 @@ type message struct {
 	From    string `json:"from"`
 }
 
-func New(ip, port string, name ...string) *Client {
+// New creates a new Moustique client
+// Usage: New(ip, port, clientName, username, password)
+// username and password are optional - omit them to use public broker
+func New(ip, port string, args ...string) *Client {
 	clientName := "go-client"
-	if len(name) > 0 && name[0] != "" {
-		clientName = name[0]
+	username := ""
+	password := ""
+
+	if len(args) > 0 && args[0] != "" {
+		clientName = args[0]
 	}
+	if len(args) > 1 {
+		username = args[1]
+	}
+	if len(args) > 2 {
+		password = args[2]
+	}
+
 	clientName += "-" + uuid.New().String()[:8]
 
 	return &Client{
 		BaseURL:    fmt.Sprintf("http://%s:%s", ip, port),
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 		ClientName: clientName,
+		Username:   username,
+		Password:   password,
 		callbacks:  make(map[string][]func(topic, message, from string)),
 	}
 }
 
+func (c *Client) addAuth(payload url.Values) url.Values {
+	if c.Username != "" && c.Password != "" {
+		payload.Set("username", Enc(c.Username))
+		payload.Set("password", Enc(c.Password))
+	}
+	return payload
+}
+
 func (c *Client) Publish(topic, message string) error {
-	payload := url.Values{
+	payload := c.addAuth(url.Values{
 		"topic":                {Enc(topic)},
 		"message":              {Enc(message)},
 		"updated_time":         {Enc(fmt.Sprintf("%d", time.Now().Unix()))},
 		"updated_nicedatetime": {Enc(NiceDateTime())},
 		"from":                 {Enc(c.ClientName)},
-	}
+	})
 
 	resp, err := c.HTTPClient.PostForm(c.BaseURL+"/POST", payload)
 	if err != nil {
@@ -66,13 +91,13 @@ func (c *Client) Publish(topic, message string) error {
 }
 
 func (c *Client) PutVal(topic, value string) error {
-	payload := url.Values{
+	payload := c.addAuth(url.Values{
 		"valname":              {Enc(topic)},
 		"val":                  {Enc(value)},
 		"updated_time":         {Enc(fmt.Sprintf("%d", time.Now().Unix()))},
 		"updated_nicedatetime": {Enc(NiceDateTime())},
 		"from":                 {Enc(c.ClientName)},
-	}
+	})
 
 	req, _ := http.NewRequest("PUT", c.BaseURL+"/PUTVAL", bytes.NewBufferString(payload.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -91,10 +116,10 @@ func (c *Client) PutVal(topic, value string) error {
 }
 
 func (c *Client) Subscribe(topic string, callback func(topic, message, from string)) error {
-	payload := url.Values{
+	payload := c.addAuth(url.Values{
 		"topic":  {Enc(topic)},
 		"client": {Enc(c.ClientName)},
-	}
+	})
 
 	resp, err := c.HTTPClient.PostForm(c.BaseURL+"/SUBSCRIBE", payload)
 	if err != nil {
@@ -115,9 +140,9 @@ func (c *Client) Subscribe(topic string, callback func(topic, message, from stri
 }
 
 func (c *Client) Pickup() error {
-	payload := url.Values{
+	payload := c.addAuth(url.Values{
 		"client": {Enc(c.ClientName)},
-	}
+	})
 
 	resp, err := c.HTTPClient.PostForm(c.BaseURL+"/PICKUP", payload)
 	if err != nil {

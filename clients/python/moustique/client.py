@@ -1,286 +1,305 @@
-import socket
-import os
-import json
+"""
+Moustique Python Client - Multi-tenant version (Fixed)
+Supports optional username/password authentication
+"""
+
 import requests
 import base64
-from datetime import datetime
-from typing import Dict, List, Callable, Any, Optional
+import codecs
+import json
+from typing import Callable, Optional, Dict, Any, List
 
-# Globala variabler
-ua = requests.Session()
-ua.timeout = 5
-sent_cnt = 0
-server_ip = ""
-server_url = ""
-server_port = ""
-pickup_intensity = 1
-name = "NONAME"
+def rot13(text: str) -> str:
+    """Apply ROT13 cipher"""
+    result = []
+    for char in text:
+        if 'a' <= char <= 'z':
+            result.append(chr((ord(char) - ord('a') + 13) % 26 + ord('a')))
+        elif 'A' <= char <= 'Z':
+            result.append(chr((ord(char) - ord('A') + 13) % 26 + ord('A')))
+        else:
+            result.append(char)
+    return ''.join(result)
+
+def encode_rot13_base64(text: str) -> str:
+    """Encode text with ROT13 and Base64 (ROT13 first, then Base64)"""
+    rot13_text = rot13(text)
+    b64 = base64.b64encode(rot13_text.encode('utf-8')).decode('ascii')
+    return b64
+
+def decode_rot13_base64(encoded: str) -> str:
+    """Decode Base64 and ROT13 (Base64 first, then ROT13)"""
+    try:
+        decoded = base64.b64decode(encoded).decode('utf-8')
+        return rot13(decoded)
+    except Exception as e:
+        print(f"Decode error: {e}")
+        return encoded
 
 class Moustique:
-    def __init__(self, ip: str = "127.0.0.1", port: str = "33335", client_name: str = ""):
-        self.pid = os.getpid()
-        hostname = socket.gethostname()
-        self.name = f"{hostname}-{client_name}-{int(os.urandom(1)[0] % 100)}-{self.pid}" if client_name else f"{hostname}-{int(os.urandom(1)[0] % 100)}-{self.pid}"
-        global server_ip, server_url, server_port, name
-        server_ip = ip
-        server_url = f"http://{ip}"
-        server_port = port
-        name = self.name
-        self.callbacks: Dict[str, List[Callable]] = {}
-        self.system_callbacks: Dict[str, Callable] = {}
-        self.initialize()
+    def __init__(self, ip: str, port: str, client_name: str, 
+                 username: Optional[str] = None, password: Optional[str] = None, 
+                 timeout: int = 5):
+        """
+        Initialize Moustique client
+        
+        Args:
+            ip: Server IP address
+            port: Server port
+            client_name: Unique client identifier
+            username: Username for authentication (optional if public access enabled)
+            password: Password for authentication (optional if public access enabled)
+            timeout: Request timeout in seconds
+        """
+        self.ip = ip
+        self.port = port
+        self.client_name = client_name
+        self.username = username
+        self.password = password
+        self.timeout = timeout
+        self.base_url = f"http://{ip}:{port}"
+        self.callbacks = {}
+        self.session = requests.Session()  # Reuse connections
+        
+    def _make_request(self, endpoint: str, params: Dict[str, str]) -> Any:
+        """Make HTTP request with optional authentication"""
+        # Add authentication if provided
+        if self.username and self.password:
+            params['username'] = self.username
+            params['password'] = self.password
+        
+        # Encode all parameters
+        encoded_params = {}
+        for key, value in params.items():
+            encoded_params[key] = encode_rot13_base64(str(value))
+        
+        try:
+            response = self.session.post(
+                f"{self.base_url}/{endpoint}",
+                data=encoded_params,
+                timeout=self.timeout
+            )
+            
+            if response.status_code == 401:
+                raise Exception("Authentication failed: Invalid username or password")
+            
+            if response.status_code == 404:
+                raise Exception(f"Endpoint not found: /{endpoint}")
+                
+            response.raise_for_status()
+            
+            # Handle empty response (e.g., for POST, SUBSCRIBE)
+            if not response.text or len(response.text.strip()) == 0:
+                return None
+            
+            # Decode response
+            try:
+                decoded = decode_rot13_base64(response.text)
+                return json.loads(decoded)
+            except json.JSONDecodeError as e:
+                print(f"JSON decode error: {e}")
+                print(f"Decoded text: {decoded}")
+                return None
+            
+        except requests.exceptions.Timeout:
+            raise Exception(f"Request timeout after {self.timeout} seconds")
+        except requests.exceptions.ConnectionError:
+            raise Exception(f"Connection error: Could not connect to {self.base_url}")
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Request failed: {e}")
+    
+    def publish(self, topic: str, message: str, from_name: Optional[str] = None) -> None:
+        """Publish a message to a topic"""
+        params = {
+            'topic': topic,
+            'message': message,
+            'from': from_name or self.client_name
+        }
+        self._make_request('POST', params)
+    
+    def subscribe(self, topic: str, callback: Callable[[str, str, str], None]) -> None:
+        """Subscribe to a topic with a callback function"""
+        params = {
+            'topic': topic,
+            'client': self.client_name
+        }
+        self._make_request('SUBSCRIBE', params)
+        self.callbacks[topic] = callback
+    
+    def putval(self, key: str, value: str, from_name: Optional[str] = None) -> None:
+        """Store a key-value pair"""
+        params = {
+            'valname': key,
+            'val': value,
+            'from': from_name or self.client_name
+        }
+        self._make_request('PUTVAL', params)
+    
+    def get_val(self, key: str) -> Any:
+        """Retrieve a value by key"""
+        params = {'topic': key}
+        result = self._make_request('GETVAL', params)
+        if result and isinstance(result, dict):
+            return result.get('val') or result.get('message')
+        return result
+    
+    def pickup(self) -> List[Dict]:
+        """Poll for new messages and trigger callbacks"""
+        params = {'client': self.client_name}
+        result = self._make_request('PICKUP', params)
 
-    def initialize(self):
-        self.server_ip = server_ip
-        self.server_port = server_port
-        self.system_callbacks["/server/action/resubscribe"] = self.resubscribe
+        all_messages = []
 
-    def publish(self, topic: str, message: str):
-        self.publish_nothread(self.server_ip, self.server_port, topic, message, self.name)
+        # Handle both old format (list) and new format (dict of topic: [messages])
+        if result:
+            if isinstance(result, dict):
+                # New format: {"/topic1": [msg1, msg2], "/topic2": [msg3]}
+                for topic, messages in result.items():
+                    if isinstance(messages, list):
+                        for msg in messages:
+                            topic_name = msg.get('topic', topic)
+                            message = msg.get('message', '')
+                            from_name = msg.get('from', '')
 
-    def putval(self, topic: str, message: str):
-            post_url = f"http://{self.server_ip}:{self.server_port}/PUTVAL"
-            payload = {
-                "valname": Moustique.enc(topic),
-                "val": Moustique.enc(message),
-                "updated_time": Moustique.enc(str(int(datetime.now().timestamp()))),
-                "updated_nicedatetime": Moustique.enc(Moustique.get_nicedatetime()),
-                "from": Moustique.enc(self.name)
+                            # Trigger callback if subscribed to this topic
+                            if topic in self.callbacks:
+                                try:
+                                    self.callbacks[topic](topic_name, message, from_name)
+                                except Exception as e:
+                                    print(f"Error in callback for topic '{topic}': {e}")
+
+                            all_messages.append(msg)
+            elif isinstance(result, list):
+                # Old format: [msg1, msg2, msg3]
+                for msg in result:
+                    topic = msg.get('topic', '')
+                    message = msg.get('message', '')
+                    from_name = msg.get('from', '')
+
+                    # Trigger callback if subscribed to this topic
+                    if topic in self.callbacks:
+                        try:
+                            self.callbacks[topic](topic, message, from_name)
+                        except Exception as e:
+                            print(f"Error in callback for topic '{topic}': {e}")
+
+                all_messages = result
+
+        return all_messages
+    
+    def tick(self) -> List[Dict]:
+        """Alias for pickup()"""
+        return self.pickup()
+    
+    def get_client_name(self) -> str:
+        """Get the client name"""
+        return self.client_name
+    
+    def resubscribe(self) -> None:
+        """Resubscribe to all topics"""
+        for topic in list(self.callbacks.keys()):
+            params = {
+                'topic': topic,
+                'client': self.client_name
             }
             try:
-                response = ua.put(post_url, data=payload, allow_redirects=True)
-                if response.status_code in (200, 308):
-                    print(f"Putval till {post_url} lyckades: {response.status_code}")
-                else:
-                    print(f"Putval oväntad status: {response.status_code} – {response.text}")
-            except requests.exceptions.RequestException as e:
-                print(f"Fel vid putval till {post_url}: {e}")
-
-    @staticmethod
-    def publish_nothread(ip: str, port: str, topic: str, message: str, from_name: str):
-        post_url = f"http://{ip}:{port}/POST"
-        payload = {
-            "topic": Moustique.enc(topic),
-            "message": Moustique.enc(message),
-            "updated_time": Moustique.enc(str(int(datetime.now().timestamp()))),
-            "updated_nicedatetime": Moustique.enc(Moustique.get_nicedatetime()),
-            "from": Moustique.enc(from_name)
-        }
-        try:
-            response = ua.post(post_url, data=payload)
-            response.raise_for_status()
-            print(f"Publish till {post_url} lyckades: {response.status_code}")
-        except requests.exceptions.RequestException as e:
-            print(f"Fel vid publish till {post_url}: {e}")
+                self._make_request('SUBSCRIBE', params)
+            except Exception as e:
+                print(f"Failed to resubscribe to '{topic}': {e}")
 
 
-    def subscribe(self, topic: str, callback: Callable, consumer: str = ""):
-        payload = {"topic": Moustique.enc(topic), "client": Moustique.enc(self.name)}
-        try:
-            response = ua.post(f"{server_url}:{server_port}/SUBSCRIBE", data=payload)
-            response.raise_for_status()
-            print(f"{self.name} subscrbar pa {topic}")
-            if topic not in self.callbacks:
-                self.callbacks[topic] = []
-            if callback not in self.callbacks[topic]:
-                self.callbacks[topic].append(callback)
-            else:
-                print(f"Hittade samma callback för ämnet {topic}!")
-        except requests.exceptions.RequestException as e:
-            print(f"Fel vid subscribe till {topic}: {e}")
+# Helper functions for server information
 
-    def resubscribe(self, *args):
-        log_topic = "/mushroom/logs/moustique_lib/INFO"
-        if self.callbacks:
-            self.publish(log_topic, f"{self.name} Resubscribing all subscriptions")
-        for topic in list(self.callbacks.keys()):
-            print(f"Resubscribing {topic} ({self.name})")
-            payload = {"topic": Moustique.enc(topic), "client": Moustique.enc(self.name)}
-            try:
-                response = ua.post(f"{server_url}:{server_port}/SUBSCRIBE", data=payload, timeout=5)
-                response.raise_for_status()
-            except requests.exceptions.RequestException as e:
-                print(f"Fel vid resubscribe för {topic}: {e}")
-        self.publish(log_topic, f"{self.name} Resubscribed all subscriptions")
-
-    def tick(self, consumer: str = ""):
-        self.pickup()
-        return 1
-
-    def get_val(self, valname: str) -> Optional[dict]:
-        post_url = f"http://{self.server_ip}:{self.server_port}/GETVAL"
-        payload = {"client": Moustique.enc(self.name), "topic": Moustique.enc(valname)}
-        try:
-            response = ua.post(post_url, data=payload)
-            response.raise_for_status()
-            decoded_text = Moustique.dec(response.text.strip())
-            return json.loads(decoded_text) if decoded_text else None
-        except (requests.exceptions.RequestException, json.JSONDecodeError, base64.binascii.Error) as e:
-            print(f"Fel vid get_val för {valname}: {e}")
-            return None
-
-    @staticmethod
-    def getval(ip: str, port: str, valname: str) -> Optional[dict]:
-        post_url = f"http://{ip}:{port}/GETVAL"
-        payload = {"client": Moustique.enc(name), "topic": Moustique.enc(valname)}
-        try:
-            response = ua.post(post_url, data=payload)
-            response.raise_for_status()
-            decoded_text = Moustique.dec(response.text.strip())
-            return json.loads(decoded_text) if decoded_text else None
-        except (requests.exceptions.RequestException, json.JSONDecodeError, base64.binascii.Error) as e:
-            print(f"Fel vid getval för {valname}: {e}")
-            return None
-
-    @staticmethod
-    def pitval(ip: str, port: str, topic: str, message: str, from_name: str):
-        Moustique.publish_nothread_put(ip, port, topic, message, from_name)
-
-    @staticmethod
-    def getversion(ip: str, port: str, pwd: str) -> Optional[dict]:
-        return Moustique.get(ip, port, pwd, "VERSION")
-
-    @staticmethod
-    def get(ip: str, port: str, pwd: str, endpoint: str, retries: int = 0) -> Optional[dict]:
-        post_url = f"http://{ip}:{port}/{endpoint}"
-        payload = {"client": Moustique.enc(name), "pwd": Moustique.enc(pwd)}
-        try:
-            response = ua.post(post_url, data=payload)
-            response.raise_for_status()
-            decoded_text = Moustique.dec(response.text.strip())
-            return json.loads(decoded_text) if decoded_text else None
-        except (requests.exceptions.RequestException, json.JSONDecodeError, base64.binascii.Error) as e:
-            if hasattr(e, 'response') and e.response.status_code == 401:
-                print("Vänligen ange rätt pwd.")
-            elif retries < 5:
-                print(f"Fel vid get ({endpoint}), försök {retries + 1}/5: {e}")
-                return Moustique.get(ip, port, pwd, endpoint, retries + 1)
-            else:
-                print(f"Misslyckades med get ({endpoint}) efter 5 försök: {e}")
-            return None
-
-    def pickup(self):
-        payload = {"client": Moustique.enc(self.name)}
-        post_url = f"{server_url}:{server_port}/PICKUP"
-        try:
-            response = ua.post(post_url, data=payload)
-            response.raise_for_status()
-            decoded_text = Moustique.dec(response.text.strip())
-            data = json.loads(decoded_text) if decoded_text else {}
-            if data:
-                for topic, messages in data.items():
-                    for message in messages:
-                        topic_callbacks = self.callbacks.get(topic, [])
-                        for callback in topic_callbacks:
-                            callback(message["topic"], message["message"], message["from"])
-                        system_callback = self.system_callbacks.get(topic)
-                        if system_callback and not topic_callbacks:
-                            system_callback(message["topic"], message["message"])
-        except (requests.exceptions.RequestException, json.JSONDecodeError, base64.binascii.Error) as e:
-            print(f"Fel vid pickup för {post_url}: {e} (rådata: {response.text if 'response' in locals() else 'ingen respons'})")
-
-    @staticmethod
-    def get_nicedatetime() -> str:
-        now = datetime.now()
-        return now.strftime("%Y-%m-%d %H:%M:%S")
-
-    def get_client_name(self) -> str:
-        return self.name
-
-    @staticmethod
-    def enc(plaintext: str) -> str:
-        if plaintext:
-            encoded = base64.b64encode(plaintext.encode()).decode()
-            return encoded.translate(str.maketrans(
-                'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
-                'NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm'))
-        return ""
-
-    @staticmethod
-    def dec(encoded: str) -> str:
-        if not encoded:
-            return ""
-        decoded = encoded.translate(str.maketrans(
-            'NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm',
-            'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))
-        return base64.b64decode(decoded).decode()
-
-# Hjälpfunktioner
-def getversion(ip: str, port: str, pwd: str) -> Optional[dict]:
-    return Moustique.get(ip, port, pwd, "VERSION")
-
-def getfileversion(ip: str, port: str, pwd: str) -> Optional[dict]:
-    return Moustique.get(ip, port, pwd, "FILEVERSION")
-
-def getstats(ip: str, port: str, pwd: str) -> Optional[dict]:
-    return Moustique.get(ip, port, pwd, "STATS")
-
-def getclients(ip: str, port: str, pwd: str) -> Optional[dict]:
-    return Moustique.get(ip, port, pwd, "CLIENTS")
-
-def getposters(ip: str, port: str, pwd: str) -> Optional[dict]:
-    return Moustique.get(ip, port, pwd, "POSTERS")
-
-def gettopics(ip: str, port: str, pwd: str) -> Optional[dict]:
-    return Moustique.get(ip, port, pwd, "TOPICS")
-
-def getpeerhosts(ip: str, port: str, pwd: str) -> Optional[dict]:
-    return Moustique.get(ip, port, pwd, "PEERHOSTS")
-
-def getcrooks(ip: str, port: str, pwd: str) -> Optional[dict]:
-    return Moustique.get(ip, port, pwd, "CROOKS")
-
-# Testklient
-import time
-
-def message_callback(topic: str, message: str, from_name: str):
-    print(f"Mottaget meddelande på ämne '{topic}': {message} från {from_name}")
-
-def main():
-    client = Moustique(ip="127.0.0.1", port="33335", client_name="TestClient")
-    print(f"Klientnamn: {client.get_client_name()}")
-
+def getversion(ip: str, port: str) -> str:
+    """Get server version (no authentication required)"""
     try:
-        print("\nTest 1: Publicerar ett meddelande...")
-        client.publish("/test/topic", "Hej, detta är ett testmeddelande!")
-        time.sleep(1)
-
-        print("\nTest 2: Sätter ett värde med putval...")
-        client.putval("127.0.0.1", "33335", "/test/value", "42", client.get_client_name())
-        time.sleep(1)
-
-        print("\nTest 3: Hämtar ett värde med getval...")
-        value = client.get_val("/test/value")
-        print(f"Hämtat värde: {value}")
-
-        print("\nTest 4: Prenumererar på ett ämne...")
-        client.subscribe("/test/topic", message_callback)
-        print("Publicerar ett meddelande till prenumererat ämne...")
-        client.publish("/test/topic", "Detta borde trigga callback!")
+        url = f"http://{ip}:{port}/VERSION"
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
         
-        print("Kör pickup i 5 sekunder för att fånga meddelanden...")
-        end_time = time.time() + 5
-        while time.time() < end_time:
-            client.tick()
-            time.sleep(0.5)
-
-        print("\nTest 5: Testar resubscribe...")
-        client.resubscribe()
-
-        print("\nTest 6: Hämtar serverinformation...")
-        version = getversion("127.0.0.1", "33335", "1Delmataren")  # Ersätt "password" med rätt lösenord
-        print(f"Serverversion: {version}")
-        stats = getstats("127.0.0.1", "33335", "1Delmataren")
-        print(f"Serverstatistik: {stats}")
-    except requests.exceptions.ConnectionError as e:
-        print(f"Anslutningsfel: {e}. Är servern igång på 127.0.0.1:33335?")
+        if response.text:
+            decoded = decode_rot13_base64(response.text)
+            # Remove quotes if present
+            return decoded.strip('"\'')
+        return "unknown"
     except Exception as e:
-        print(f"Ett oväntat fel uppstod: {e}")
+        print(f"Failed to get version: {e}")
+        return "unknown"
 
-if __name__ == "__main__":
+def getstats(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> Dict:
+    """Get server statistics (requires authentication if not public)"""
     try:
-        main()
-    except KeyboardInterrupt:
-        print("\nAvslutar klienten...")
+        params = {}
+        if username and password:
+            params = {
+                'username': encode_rot13_base64(username),
+                'password': encode_rot13_base64(password)
+            }
+        
+        url = f"http://{ip}:{port}/STATS"
+        response = requests.post(url, data=params, timeout=5)
+        
+        if response.status_code == 401:
+            raise Exception("Authentication failed - username and password required")
+        
+        response.raise_for_status()
+        
+        if response.text:
+            decoded = decode_rot13_base64(response.text)
+            return json.loads(decoded)
+        return {}
     except Exception as e:
-        print(f"Ett fel uppstod: {e}")
+        print(f"Failed to get stats: {e}")
+        return {}
+
+def getclients(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+    """Get active clients (requires authentication if not public)"""
+    try:
+        params = {}
+        if username and password:
+            params = {
+                'username': encode_rot13_base64(username),
+                'password': encode_rot13_base64(password)
+            }
+        
+        url = f"http://{ip}:{port}/CLIENTS"
+        response = requests.post(url, data=params, timeout=5)
+        
+        if response.status_code == 401:
+            raise Exception("Authentication failed - username and password required")
+        
+        response.raise_for_status()
+        
+        if response.text:
+            decoded = decode_rot13_base64(response.text)
+            return json.loads(decoded)
+        return []
+    except Exception as e:
+        print(f"Failed to get clients: {e}")
+        return []
+
+def gettopics(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+    """Get all topics (requires authentication if not public)"""
+    try:
+        params = {}
+        if username and password:
+            params = {
+                'username': encode_rot13_base64(username),
+                'password': encode_rot13_base64(password)
+            }
+        
+        url = f"http://{ip}:{port}/TOPICS"
+        response = requests.post(url, data=params, timeout=5)
+        
+        if response.status_code == 401:
+            raise Exception("Authentication failed - username and password required")
+        
+        response.raise_for_status()
+        
+        if response.text:
+            decoded = decode_rot13_base64(response.text)
+            return json.loads(decoded)
+        return []
+    except Exception as e:
+        print(f"Failed to get topics: {e}")
+        return []
