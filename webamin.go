@@ -17,8 +17,18 @@ var superadminHTML string
 //go:embed static/favicon.svg
 var faviconSVG string
 
+//go:embed static/landing/index.html
+var landingHTML string
+
+//go:embed static/signup.html
+var signupHTML string
+
 func (s *Server) ServeWebAdmin(conn net.Conn) {
 	s.sendHTML(conn, adminHTML)
+}
+
+func (s *Server) ServeSignup(conn net.Conn) {
+	s.sendHTML(conn, signupHTML)
 }
 
 func (s *Server) ServeSuperAdmin(conn net.Conn) {
@@ -27,6 +37,10 @@ func (s *Server) ServeSuperAdmin(conn net.Conn) {
 
 func (s *Server) ServeFavicon(conn net.Conn) {
 	s.sendSVG(conn, faviconSVG)
+}
+
+func (s *Server) ServeLanding(conn net.Conn) {
+	s.sendHTML(conn, landingHTML)
 }
 
 /*o:embed static/admin.html

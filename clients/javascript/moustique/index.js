@@ -21,20 +21,22 @@ class Moustique {
 
     static enc(text) {
         if (!text) return '';
-        const b64 = btoa(text);
-        return b64.replace(/[A-Za-z]/g, c =>
+        // Must match server encoding: ROT13 first, then Base64
+        const rotated = text.replace(/[A-Za-z]/g, c =>
             'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.includes(c)
                 ? 'NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm'['ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.indexOf(c)]
                 : c
         );
+        return btoa(rotated);
     }
 
     static dec(encoded) {
         if (!encoded) return '';
-        const rotated = encoded.replace(/[A-Za-z]/g, c =>
+        // Reverse of encode: Base64 decode first, then ROT13
+        const decoded = atob(encoded);
+        return decoded.replace(/[A-Za-z]/g, c =>
             'NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm'['ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.indexOf(c)]
         );
-        return atob(rotated);
     }
 
     static getNiceDateTime() {

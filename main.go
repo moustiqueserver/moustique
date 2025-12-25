@@ -146,7 +146,14 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP, syscall.SIGQUIT)
 
-	// Start server in goroutine
+	// Start landing page server on port 80 in goroutine
+	go func() {
+		if err := StartLandingServer(ctx, logger); err != nil {
+			logger.Printf("Landing server error: %v", err)
+		}
+	}()
+
+	// Start main server in goroutine
 	go func() {
 		if err := server.Start(ctx); err != nil {
 			logger.Printf("Server error: %v", err)

@@ -2,7 +2,7 @@
 # Test suite for all Moustique clients
 # Tests: Python, JavaScript, Java, Go, Perl, and CLI
 
-set -e  # Exit on error
+# set -e  # Exit on error - commented out for debugging
 
 # Colors for output
 RED='\033[0;31m'
@@ -119,6 +119,15 @@ if command -v python3 &> /dev/null; then
 
     run_test "Python: Authenticated publish" \
         "python3 tests/python_test.py auth $TEST_USER $TEST_PASS"
+
+    run_test "Python: PUTVAL" \
+        "python3 tests/python_test.py putval $TEST_USER $TEST_PASS"
+
+    run_test "Python: GETVAL" \
+        "python3 tests/python_test.py getval $TEST_USER $TEST_PASS"
+
+    run_test "Python: SUBSCRIBE/PICKUP" \
+        "python3 tests/python_test.py subscribe $TEST_USER $TEST_PASS"
 else
     print_error "Python3 not found. Skipping Python tests."
 fi
@@ -130,10 +139,19 @@ print_header "Testing JavaScript Client"
 
 if command -v node &> /dev/null; then
     run_test "Node.js: Public broker publish" \
-        "node tests/javascript_test.js public"
+        "node tests/javascript_test.mjs public"
 
     run_test "Node.js: Authenticated publish" \
-        "node tests/javascript_test.js auth $TEST_USER $TEST_PASS"
+        "node tests/javascript_test.mjs auth $TEST_USER $TEST_PASS"
+
+    run_test "Node.js: PUTVAL" \
+        "node tests/javascript_test.mjs putval $TEST_USER $TEST_PASS"
+
+    run_test "Node.js: GETVAL" \
+        "node tests/javascript_test.mjs getval $TEST_USER $TEST_PASS"
+
+    run_test "Node.js: SUBSCRIBE/PICKUP" \
+        "node tests/javascript_test.mjs subscribe $TEST_USER $TEST_PASS"
 else
     print_error "Node.js not found. Skipping JavaScript tests."
 fi
@@ -143,20 +161,17 @@ fi
 # ============================================================================
 print_header "Testing Go Client"
 
-run_test "Go: Build test client" \
-    "cd tests && go build -o go_test go_test.go"
+run_test "Go: Public broker publish" \
+    "(cd tests && go run test_go_client.go public $MOUSTIQUE_HOST $MOUSTIQUE_PORT)"
 
-if [ -f "tests/go_test" ]; then
-    run_test "Go: Public broker publish" \
-        "tests/go_test public $MOUSTIQUE_HOST $MOUSTIQUE_PORT"
+run_test "Go: Authenticated publish" \
+    "(cd tests && go run test_go_client.go auth $MOUSTIQUE_HOST $MOUSTIQUE_PORT $TEST_USER $TEST_PASS)"
 
-    run_test "Go: Authenticated publish" \
-        "tests/go_test auth $MOUSTIQUE_HOST $MOUSTIQUE_PORT $TEST_USER $TEST_PASS"
+run_test "Go: PUTVAL" \
+    "(cd tests && go run test_go_client.go putval $MOUSTIQUE_HOST $MOUSTIQUE_PORT $TEST_USER $TEST_PASS)"
 
-    rm -f tests/go_test
-else
-    print_error "Go test client build failed"
-fi
+run_test "Go: SUBSCRIBE/PICKUP" \
+    "(cd tests && go run test_go_client.go subscribe $MOUSTIQUE_HOST $MOUSTIQUE_PORT $TEST_USER $TEST_PASS)"
 
 # ============================================================================
 # Perl Tests

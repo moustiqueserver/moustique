@@ -287,19 +287,97 @@ def gettopics(ip: str, port: str, username: Optional[str] = None, password: Opti
                 'username': encode_rot13_base64(username),
                 'password': encode_rot13_base64(password)
             }
-        
+
         url = f"http://{ip}:{port}/TOPICS"
         response = requests.post(url, data=params, timeout=5)
-        
+
         if response.status_code == 401:
             raise Exception("Authentication failed - username and password required")
-        
+
         response.raise_for_status()
-        
+
         if response.text:
             decoded = decode_rot13_base64(response.text)
             return json.loads(decoded)
         return []
     except Exception as e:
         print(f"Failed to get topics: {e}")
+        return []
+
+def getposters(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+    """Get all posters (requires authentication if not public)"""
+    try:
+        params = {}
+        if username and password:
+            params = {
+                'username': encode_rot13_base64(username),
+                'password': encode_rot13_base64(password)
+            }
+
+        url = f"http://{ip}:{port}/POSTERS"
+        response = requests.post(url, data=params, timeout=5)
+
+        if response.status_code == 401:
+            raise Exception("Authentication failed - username and password required")
+
+        response.raise_for_status()
+
+        if response.text:
+            decoded = decode_rot13_base64(response.text)
+            return json.loads(decoded)
+        return []
+    except Exception as e:
+        print(f"Failed to get posters: {e}")
+        return []
+
+def getpeerhosts(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+    """Get all peer hosts (requires authentication if not public)"""
+    try:
+        params = {}
+        if username and password:
+            params = {
+                'username': encode_rot13_base64(username),
+                'password': encode_rot13_base64(password)
+            }
+
+        url = f"http://{ip}:{port}/PEERHOSTS"
+        response = requests.post(url, data=params, timeout=5)
+
+        if response.status_code == 401:
+            raise Exception("Authentication failed - username and password required")
+
+        response.raise_for_status()
+
+        if response.text:
+            decoded = decode_rot13_base64(response.text)
+            return json.loads(decoded)
+        return []
+    except Exception as e:
+        print(f"Failed to get peer hosts: {e}")
+        return []
+
+def getcrooks(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+    """Get all crooks/banned IPs (requires authentication if not public)"""
+    try:
+        params = {}
+        if username and password:
+            params = {
+                'username': encode_rot13_base64(username),
+                'password': encode_rot13_base64(password)
+            }
+
+        url = f"http://{ip}:{port}/CROOKS"
+        response = requests.post(url, data=params, timeout=5)
+
+        if response.status_code == 401:
+            raise Exception("Authentication failed - username and password required")
+
+        response.raise_for_status()
+
+        if response.text:
+            decoded = decode_rot13_base64(response.text)
+            return json.loads(decoded)
+        return []
+    except Exception as e:
+        print(f"Failed to get crooks: {e}")
         return []

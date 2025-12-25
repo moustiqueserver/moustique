@@ -516,6 +516,9 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	case "":
 		s.ServeWebAdmin(conn)
 		return
+	case "admin":
+		s.ServeWebAdmin(conn)
+		return
 	case "VERSION":
 		s.handleVersion(conn, "running")
 		return
@@ -524,6 +527,12 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 		return
 	case "superadmin":
 		s.ServeSuperAdmin(conn)
+		return
+	case "signup":
+		s.ServeSignup(conn)
+		return
+	case "SIGNUP":
+		s.handleSignup(conn, params)
 		return
 	case "favicon.ico", "favicon.svg":
 		s.ServeFavicon(conn)
@@ -780,6 +789,47 @@ func (s *Server) handleVersion(conn net.Conn, versionType string) {
 		}
 		s.sendJSON(conn, fileversion)
 	}
+}
+
+func (s *Server) handleSignup(conn net.Conn, params map[string]string) {
+	// Get username and password from params (already ROT13+Base64 encoded)
+	username := params["username"]
+	password := params["password"]
+
+	if username == "" || password == "" {
+		s.sendError(conn, fmt.Errorf("username and password required"))
+		return
+	}
+
+	// Decode username and password
+	decodedUsername := decodeROT13Base64(username)
+	decodedPassword := decodeROT13Base64(password)
+
+	// Validate username
+	if len(decodedUsername) < 3 || len(decodedUsername) > 32 {
+		s.sendError(conn, fmt.Errorf("username must be 3-32 characters"))
+		return
+	}
+
+	// Validate password
+	if len(decodedPassword) < 8 {
+		s.sendError(conn, fmt.Errorf("password must be at least 8 characters"))
+		return
+	}
+
+	// Add user
+	if err := s.AddUser(decodedUsername, decodedPassword); err != nil {
+		s.sendError(conn, fmt.Errorf("failed to create user: %v", err))
+		return
+	}
+
+	s.logger.Printf("New user registered: %s", decodedUsername)
+
+	// Send success response
+	s.sendJSON(conn, map[string]string{
+		"status":  "success",
+		"message": "Account created successfully",
+	})
 }
 
 func (s *Server) handleStatus(conn net.Conn, params map[string]string, broker *Broker) {
