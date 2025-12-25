@@ -511,10 +511,6 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	// Route to handler
 	path := strings.Trim(req.URL.Path, "/")
 
-	if s.debug {
-		s.logger.Printf("Request path: '%s' from %s", path, peerHost)
-	}
-
 	// Public endpoints (no auth required)
 	switch path {
 	case "":
