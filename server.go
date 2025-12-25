@@ -598,11 +598,11 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	// Route to specific handler
 	switch path {
 	case "PICKUP":
-		s.handlePickup(conn, params, broker)
+		s.handlePickup(conn, params, peerHost, broker)
 	case "POST":
 		s.handlePost(conn, params, peerHost, broker)
 	case "SUBSCRIBE":
-		s.handleSubscribe(conn, params, broker)
+		s.handleSubscribe(conn, params, peerHost, broker)
 	case "PUTVAL":
 		s.handlePutVal(conn, params, broker)
 	case "GETVAL":
@@ -632,7 +632,7 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 
 // Handler methods
 
-func (s *Server) handlePickup(conn net.Conn, params map[string]string, broker *Broker) {
+func (s *Server) handlePickup(conn net.Conn, params map[string]string, peerHost string, broker *Broker) {
 	client := params["client"]
 	if client == "" {
 		if s.debug {
@@ -642,7 +642,7 @@ func (s *Server) handlePickup(conn net.Conn, params map[string]string, broker *B
 		return
 	}
 
-	messages, err := broker.Pickup(client)
+	messages, err := broker.Pickup(client, peerHost)
 	if err != nil {
 		s.sendError(conn, err)
 		return
@@ -677,7 +677,7 @@ func (s *Server) handlePost(conn net.Conn, params map[string]string, peerHost st
 	s.sendOK(conn)
 }
 
-func (s *Server) handleSubscribe(conn net.Conn, params map[string]string, broker *Broker) {
+func (s *Server) handleSubscribe(conn net.Conn, params map[string]string, peerHost string, broker *Broker) {
 	topic := params["topic"]
 	client := params["client"]
 
@@ -686,7 +686,7 @@ func (s *Server) handleSubscribe(conn net.Conn, params map[string]string, broker
 		return
 	}
 
-	err := broker.Subscribe(topic, client)
+	err := broker.Subscribe(topic, client, peerHost)
 	if err != nil {
 		s.sendError(conn, err)
 		return

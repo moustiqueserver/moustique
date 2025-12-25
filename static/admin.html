@@ -933,6 +933,9 @@
                         `;
                     } else {
                         const metaParts = [];
+                        if (client.IP) {
+                            metaParts.push(`IP: ${escapeHtml(client.IP)}`);
+                        }
                         if (client.FirstSeenNiceDatetime) {
                             metaParts.push(`First seen: ${escapeHtml(client.FirstSeenNiceDatetime)}`);
                         }
@@ -981,12 +984,46 @@
                     return;
                 }
 
-                container.innerHTML = posters.sort().map(poster => `
-                    <div class="list-item">
-                        <div class="item-title">${escapeHtml(poster)}</div>
-                        <div class="item-meta">Message publisher</div>
-                    </div>
-                `).join('');
+                // Sort by name
+                posters.sort((a, b) => {
+                    const nameA = typeof a === 'string' ? a : a.Name;
+                    const nameB = typeof b === 'string' ? b : b.Name;
+                    return nameA.localeCompare(nameB);
+                });
+
+                container.innerHTML = posters.map(poster => {
+                    // Handle both old string format and new object format
+                    if (typeof poster === 'string') {
+                        return `
+                            <div class="list-item">
+                                <div class="item-title">${escapeHtml(poster)}</div>
+                                <div class="item-meta">Message publisher</div>
+                            </div>
+                        `;
+                    } else {
+                        const metaParts = [];
+                        if (poster.IP) {
+                            metaParts.push(`IP: ${escapeHtml(poster.IP)}`);
+                        }
+                        if (poster.FirstSeenNiceDatetime) {
+                            metaParts.push(`First seen: ${escapeHtml(poster.FirstSeenNiceDatetime)}`);
+                        }
+                        if (poster.LatestPostNiceDatetime) {
+                            metaParts.push(`Latest post: ${escapeHtml(poster.LatestPostNiceDatetime)}`);
+                        }
+                        if (poster.MessageCount) {
+                            metaParts.push(`Messages: ${poster.MessageCount}`);
+                        }
+                        const metaText = metaParts.length > 0 ? metaParts.join(' • ') : 'Message publisher';
+
+                        return `
+                            <div class="list-item">
+                                <div class="item-title">${escapeHtml(poster.Name)}</div>
+                                <div class="item-meta">${metaText}</div>
+                            </div>
+                        `;
+                    }
+                }).join('');
             } catch (error) {
                 container.innerHTML = '<div class="error">Failed to load posters</div>';
             }

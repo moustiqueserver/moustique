@@ -32,13 +32,20 @@ type Client struct {
 	LatestPickupNiceDatetime string `json:"LatestPickupNiceDatetime"`
 	LatestSystemPickup       int64  `json:"LatestSystemPickup"`
 	RequestCounter           int    `json:"RequestCounter"`
+	IP                       string `json:"IP"`
 }
 
 // Provider tracks message posters
 type Provider struct {
-	LatestPostsByTopic map[string]*Message `json:"latest_posts_by_topic"`
-	LatestPost         *Message            `json:"latest_post"`
-	IP                 string              `json:"ip"`
+	Name                     string              `json:"Name"`
+	LatestPostsByTopic       map[string]*Message `json:"latest_posts_by_topic"`
+	LatestPost               *Message            `json:"latest_post"`
+	IP                       string              `json:"IP"`
+	FirstSeen                int64               `json:"FirstSeen"`
+	FirstSeenNiceDatetime    string              `json:"FirstSeenNiceDatetime"`
+	LatestPostTime           int64               `json:"LatestPostTime"`
+	LatestPostNiceDatetime   string              `json:"LatestPostNiceDatetime"`
+	MessageCount             int                 `json:"MessageCount"`
 }
 
 // Broker manages message routing and subscriptions
@@ -118,7 +125,7 @@ func (b *Broker) GetUserLogPath() string {
 }
 
 // Subscribe adds a client subscription to a topic
-func (b *Broker) Subscribe(topic, clientName string) error {
+func (b *Broker) Subscribe(topic, clientName, ip string) error {
 	if clientName == "" {
 		return fmt.Errorf("client name cannot be empty")
 	}
@@ -137,11 +144,12 @@ func (b *Broker) Subscribe(topic, clientName string) error {
 			LatestPickupNiceDatetime: formatNiceDateTime(now),
 			LatestSystemPickup:       now,
 			RequestCounter:           0,
+			IP:                       ip,
 		}
 		if b.debug {
-			b.logger.Printf("New client: %s", clientName)
+			b.logger.Printf("New client: %s from IP: %s", clientName, ip)
 		}
-		b.LogUser("New client: %s", clientName)
+		b.LogUser("New client: %s from IP: %s", clientName, ip)
 	}
 
 	if !contains(b.subscriptions[topic], clientName) {
@@ -200,7 +208,11 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	provider, exists := b.providers[from]
 	if !exists {
 		provider = &Provider{
-			LatestPostsByTopic: make(map[string]*Message),
+			Name:                   from,
+			LatestPostsByTopic:     make(map[string]*Message),
+			FirstSeen:              updatedTime,
+			FirstSeenNiceDatetime:  formatNiceDateTime(updatedTime),
+			MessageCount:           0,
 		}
 		b.providers[from] = provider
 	}
@@ -208,6 +220,9 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	provider.LatestPostsByTopic[topic] = msg
 	provider.LatestPost = msg
 	provider.IP = ip
+	provider.LatestPostTime = updatedTime
+	provider.LatestPostNiceDatetime = formatNiceDateTime(updatedTime)
+	provider.MessageCount++
 
 	topics := b.explodeTopic(topic)
 	topics = append(topics, "#")
@@ -260,7 +275,7 @@ func (b *Broker) PublishSystemMessage(topic, message string) {
 }
 
 // Pickup retrieves messages for a client
-func (b *Broker) Pickup(clientName string) (map[string][]*Message, error) {
+func (b *Broker) Pickup(clientName, ip string) (map[string][]*Message, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -296,6 +311,7 @@ func (b *Broker) Pickup(clientName string) (map[string][]*Message, error) {
 		client.LatestPickupNiceDatetime = formatNiceDateTime(now)
 		client.LatestSystemPickup = now
 		client.RequestCounter++
+		client.IP = ip  // Update IP in case it changed
 	} else {
 		if b.debug {
 			b.logger.Printf("Pickup request for unknown client: %s", clientName)
@@ -632,14 +648,14 @@ func (b *Broker) GetClients() []*Client {
 	return clients
 }
 
-// GetPosters returns list of poster names
-func (b *Broker) GetPosters() []string {
+// GetPosters returns list of poster information
+func (b *Broker) GetPosters() []*Provider {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	posters := make([]string, 0, len(b.providers))
-	for poster := range b.providers {
-		posters = append(posters, poster)
+	posters := make([]*Provider, 0, len(b.providers))
+	for _, provider := range b.providers {
+		posters = append(posters, provider)
 	}
 	return posters
 }
