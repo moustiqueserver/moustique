@@ -621,7 +621,11 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 		s.handleLog(conn, params, broker)
 	case "TOPICS":
 		s.handleTopics(conn, params, broker)
+	case "CROOKS":
+		s.handleCrooks(conn, params, broker)
 	default:
+		// Invalid/unknown endpoint - record as crook and ban
+		broker.RecordInvalidRequest(peerHost)
 		s.sendNotFound(conn)
 	}
 
@@ -791,6 +795,11 @@ func (s *Server) handlePosters(conn net.Conn, params map[string]string, broker *
 func (s *Server) handleTopics(conn net.Conn, params map[string]string, broker *Broker) {
 	topics := broker.GetTopics()
 	s.sendJSON(conn, topics)
+}
+
+func (s *Server) handleCrooks(conn net.Conn, params map[string]string, broker *Broker) {
+	crooks := broker.GetCrooks()
+	s.sendJSON(conn, crooks)
 }
 
 func (s *Server) handleLog(conn net.Conn, params map[string]string, broker *Broker) {

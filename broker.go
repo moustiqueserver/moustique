@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
@@ -48,6 +49,19 @@ type Provider struct {
 	MessageCount             int                 `json:"MessageCount"`
 }
 
+// CrookInfo tracks bad actors making invalid requests
+type CrookInfo struct {
+	IP                 string `json:"IP"`
+	Attempts           int    `json:"Attempts"`
+	FirstSeen          int64  `json:"FirstSeen"`
+	FirstSeenNiceDatetime string `json:"FirstSeenNiceDatetime"`
+	LastSeen           int64  `json:"LastSeen"`
+	LastSeenNiceDatetime  string `json:"LastSeenNiceDatetime"`
+	BannedAt           int64  `json:"BannedAt"`
+	BannedAtNiceDatetime  string `json:"BannedAtNiceDatetime"`
+	IsBanned           bool   `json:"IsBanned"`
+}
+
 // Broker manages message routing and subscriptions
 type Broker struct {
 	mu                          sync.RWMutex
@@ -61,6 +75,7 @@ type Broker struct {
 	subscriptions               map[string][]string
 	clients                     map[string]*Client
 	providers                   map[string]*Provider
+	crooks                      map[string]*CrookInfo
 	topicExplosionCache         map[string][]string
 	messageCount                int64
 	minuteMessageCount          int64
@@ -95,6 +110,7 @@ func NewBroker(logger *log.Logger, db *Database, debug bool) *Broker {
 		subscriptions:       make(map[string][]string),
 		clients:             make(map[string]*Client),
 		providers:           make(map[string]*Provider),
+		crooks:              make(map[string]*CrookInfo),
 		topicExplosionCache: make(map[string][]string),
 		messageQueueTimeout: 5 * time.Minute,
 		posterStatsTimeout:  1 * time.Hour,
@@ -666,6 +682,80 @@ func (b *Broker) GetTopics() []string {
 	defer b.mu.RUnlock()
 
 	return b.db.GetKeys()
+}
+
+// RecordInvalidRequest records an invalid request from an IP and bans if needed
+func (b *Broker) RecordInvalidRequest(ip string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if ip == "" || ip == "UNKNOWN" {
+		return
+	}
+
+	now := time.Now().Unix()
+
+	crook, exists := b.crooks[ip]
+	if !exists {
+		// First offense - create entry and publish system notification
+		crook = &CrookInfo{
+			IP:                   ip,
+			Attempts:             1,
+			FirstSeen:            now,
+			FirstSeenNiceDatetime: formatNiceDateTime(now),
+			LastSeen:             now,
+			LastSeenNiceDatetime:  formatNiceDateTime(now),
+			IsBanned:             false,
+		}
+		b.crooks[ip] = crook
+
+		// Publish system notification about unauthorized connection
+		b.mu.Unlock()
+		b.PublishSystemMessage(
+			"/server/notification/unauthorized_connection",
+			fmt.Sprintf("Unauthorized connection attempt from %s", ip),
+		)
+		b.mu.Lock()
+
+		if b.debug {
+			b.logger.Printf("Recording invalid request from new IP: %s", ip)
+		}
+	} else {
+		// Repeat offender
+		crook.Attempts++
+		crook.LastSeen = now
+		crook.LastSeenNiceDatetime = formatNiceDateTime(now)
+	}
+
+	// Ban the IP using fail2ban
+	if !crook.IsBanned {
+		crook.IsBanned = true
+		crook.BannedAt = now
+		crook.BannedAtNiceDatetime = formatNiceDateTime(now)
+
+		b.logger.Printf("Banning IP %s after %d invalid attempts", ip, crook.Attempts)
+		b.LogUser("Banned IP: %s (attempts: %d)", ip, crook.Attempts)
+
+		// Execute fail2ban command in background
+		go func() {
+			cmd := exec.Command("sudo", "fail2ban-client", "set", "moustique", "banip", ip)
+			if err := cmd.Run(); err != nil {
+				b.logger.Printf("Warning: Failed to ban IP %s via fail2ban: %v", ip, err)
+			}
+		}()
+	}
+}
+
+// GetCrooks returns list of banned IPs
+func (b *Broker) GetCrooks() []*CrookInfo {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	crooks := make([]*CrookInfo, 0, len(b.crooks))
+	for _, crook := range b.crooks {
+		crooks = append(crooks, crook)
+	}
+	return crooks
 }
 
 func formatNiceDateTime(timestamp int64) string {
