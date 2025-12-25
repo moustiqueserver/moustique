@@ -11,14 +11,18 @@
 
 import { Moustique } from '../clients/javascript/moustique/index.js';
 
+// Get configuration from environment
+const MOUSTIQUE_HOST = process.env.MOUSTIQUE_HOST || 'localhost';
+const MOUSTIQUE_PORT = process.env.MOUSTIQUE_PORT || '33334';
+
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function testPublic() {
     const client = new Moustique({
-        ip: 'localhost',
-        port: '33334',
+        ip: MOUSTIQUE_HOST,
+        port: MOUSTIQUE_PORT,
         clientName: 'js-test-public'
     });
 
@@ -34,8 +38,8 @@ async function testPublic() {
 
 async function testAuth(username, password) {
     const client = new Moustique({
-        ip: 'localhost',
-        port: '33334',
+        ip: MOUSTIQUE_HOST,
+        port: MOUSTIQUE_PORT,
         clientName: 'js-test-auth',
         username: username,
         password: password
@@ -53,8 +57,8 @@ async function testAuth(username, password) {
 
 async function testPutval(username, password) {
     const client = new Moustique({
-        ip: 'localhost',
-        port: '33334',
+        ip: MOUSTIQUE_HOST,
+        port: MOUSTIQUE_PORT,
         clientName: 'js-test-putval',
         username: username,
         password: password
@@ -74,8 +78,8 @@ async function testPutval(username, password) {
 
 async function testGetval(username, password) {
     const client = new Moustique({
-        ip: 'localhost',
-        port: '33334',
+        ip: MOUSTIQUE_HOST,
+        port: MOUSTIQUE_PORT,
         clientName: 'js-test-getval',
         username: username,
         password: password
@@ -96,16 +100,16 @@ async function testGetval(username, password) {
 
 async function testSubscribe(username, password) {
     const client1 = new Moustique({
-        ip: 'localhost',
-        port: '33334',
+        ip: MOUSTIQUE_HOST,
+        port: MOUSTIQUE_PORT,
         clientName: 'js-test-subscriber',
         username: username,
         password: password
     });
 
     const client2 = new Moustique({
-        ip: 'localhost',
-        port: '33334',
+        ip: MOUSTIQUE_HOST,
+        port: MOUSTIQUE_PORT,
         clientName: 'js-test-publisher',
         username: username,
         password: password

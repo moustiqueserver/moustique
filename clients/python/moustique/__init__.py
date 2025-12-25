@@ -4,7 +4,7 @@ from .client import (
     getposters, getpeerhosts, getcrooks
 )
 
-__version__ = "0.1.0"  # sätt en version
+__version__ = "0.1.1"
 __all__ = [
     "Moustique",
     "getversion", "getstats", "getclients", "gettopics",

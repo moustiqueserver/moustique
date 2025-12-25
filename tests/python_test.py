@@ -18,11 +18,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'clients', 'pyt
 
 from moustique import Moustique
 
+# Get configuration from environment
+MOUSTIQUE_HOST = os.environ.get('MOUSTIQUE_HOST', 'localhost')
+MOUSTIQUE_PORT = os.environ.get('MOUSTIQUE_PORT', '33334')
+
 def test_public():
     """Test publishing to public broker"""
     client = Moustique(
-        ip="localhost",
-        port="33334",
+        ip=MOUSTIQUE_HOST,
+        port=MOUSTIQUE_PORT,
         client_name="python-test-public"
     )
 
@@ -37,8 +41,8 @@ def test_public():
 def test_auth(username, password):
     """Test publishing with authentication"""
     client = Moustique(
-        ip="localhost",
-        port="33334",
+        ip=MOUSTIQUE_HOST,
+        port=MOUSTIQUE_PORT,
         client_name="python-test-auth",
         username=username,
         password=password
@@ -55,8 +59,8 @@ def test_auth(username, password):
 def test_putval(username, password):
     """Test PUTVAL operation"""
     client = Moustique(
-        ip="localhost",
-        port="33334",
+        ip=MOUSTIQUE_HOST,
+        port=MOUSTIQUE_PORT,
         client_name="python-test-putval",
         username=username,
         password=password
@@ -75,8 +79,8 @@ def test_putval(username, password):
 def test_getval(username, password):
     """Test GETVAL operation"""
     client = Moustique(
-        ip="localhost",
-        port="33334",
+        ip=MOUSTIQUE_HOST,
+        port=MOUSTIQUE_PORT,
         client_name="python-test-getval",
         username=username,
         password=password
@@ -104,16 +108,16 @@ def test_getval(username, password):
 def test_subscribe(username, password):
     """Test SUBSCRIBE and PICKUP operations"""
     client1 = Moustique(
-        ip="localhost",
-        port="33334",
+        ip=MOUSTIQUE_HOST,
+        port=MOUSTIQUE_PORT,
         client_name="python-test-subscriber",
         username=username,
         password=password
     )
 
     client2 = Moustique(
-        ip="localhost",
-        port="33334",
+        ip=MOUSTIQUE_HOST,
+        port=MOUSTIQUE_PORT,
         client_name="python-test-publisher",
         username=username,
         password=password

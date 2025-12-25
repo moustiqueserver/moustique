@@ -1,12 +1,12 @@
 # Moustique JavaScript Client
 
-![License](https://img.shields.io/github/license/yourusername/moustique)
+![License](https://img.shields.io/github/license/moustiqueserver/moustique)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-blue)
 ![Browser](https://img.shields.io/badge/browser-compatible-brightgreen)
 ![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-success)
 
-A lightweight, zero-dependency HTTP-based **publish/subscribe client** for the  
-[Moustique server](https://github.com/yourusername/moustique).
+A lightweight, zero-dependency HTTP-based **publish/subscribe client** for the
+[Moustique server](https://github.com/moustiqueserver/moustique).
 
 Designed to work seamlessly in both **Node.js (v18+)** and **modern browsers** using native `fetch`.
 
@@ -26,10 +26,16 @@ Designed to work seamlessly in both **Node.js (v18+)** and **modern browsers** u
 
 ## 📦 Installation
 
-This client lives inside the **Moustique monorepo**.
+### NPM
 
 ```bash
-git clone https://github.com/yourusername/moustique.git
+npm install moustique-client
+```
+
+### From source
+
+```bash
+git clone https://github.com/moustiqueserver/moustique.git
 cd moustique/clients/javascript
 ```
 
@@ -37,11 +43,9 @@ cd moustique/clients/javascript
 
 ```html
 <script type="module">
-  import { Moustique } from 'https://raw.githubusercontent.com/yourusername/moustique/main/clients/javascript/moustique/index.js';
+  import { Moustique } from 'https://raw.githubusercontent.com/moustiqueserver/moustique/main/clients/javascript/moustique/index.js';
 </script>
 ```
-
-> Replace `yourusername` with the actual repository owner.
 
 ---
 
@@ -50,7 +54,7 @@ cd moustique/clients/javascript
 ### Node.js
 
 ```js
-import { Moustique } from './moustique/index.js';
+import { Moustique } from 'moustique-client';
 
 const client = new Moustique({
   ip: '127.0.0.1',
