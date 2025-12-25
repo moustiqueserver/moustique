@@ -25,13 +25,13 @@ type Message struct {
 
 // Client represents a connected subscriber
 type Client struct {
-	Name                     string
-	FirstSeen                int64
-	FirstSeenNiceDatetime    string
-	LatestPickup             int64
-	LatestPickupNiceDatetime string
-	LatestSystemPickup       int64
-	RequestCounter           int
+	Name                     string `json:"Name"`
+	FirstSeen                int64  `json:"FirstSeen"`
+	FirstSeenNiceDatetime    string `json:"FirstSeenNiceDatetime"`
+	LatestPickup             int64  `json:"LatestPickup"`
+	LatestPickupNiceDatetime string `json:"LatestPickupNiceDatetime"`
+	LatestSystemPickup       int64  `json:"LatestSystemPickup"`
+	RequestCounter           int    `json:"RequestCounter"`
 }
 
 // Provider tracks message posters
