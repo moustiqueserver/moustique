@@ -235,6 +235,30 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	return nil
 }
 
+// PublishSystemMessage publishes a system message that will be delivered to all clients
+func (b *Broker) PublishSystemMessage(topic, message string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	now := time.Now().Unix()
+	msg := &Message{
+		From:                "SERVER",
+		Topic:               topic,
+		Message:             message,
+		UpdatedTime:         now,
+		UpdatedNiceDatetime: formatNiceDateTime(now),
+		Subscribers:         make(map[string]bool),
+		IP:                  "127.0.0.1",
+	}
+
+	b.systemMessageQueue[topic] = append(b.systemMessageQueue[topic], msg)
+
+	if b.debug {
+		b.logger.Printf("Published system message to topic: %s", topic)
+	}
+	b.LogUser("Published system message to topic: %s", topic)
+}
+
 // Pickup retrieves messages for a client
 func (b *Broker) Pickup(clientName string) (map[string][]*Message, error) {
 	b.mu.Lock()

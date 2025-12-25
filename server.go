@@ -76,6 +76,9 @@ func (bm *BrokerManager) InitializeDefault(ctx context.Context, allowPublic bool
 				bm.defaultBroker.SetUserLogger(userLogger, userLogPath)
 				bm.defaultBroker.LogUser("Public broker initialized")
 
+				// Publish resubscribe system message for clients to re-register
+				bm.defaultBroker.PublishSystemMessage("/server/action/resubscribe", "resubscribe")
+
 				// Start maintenance for public broker
 				go bm.defaultBroker.StartMaintenance(ctx)
 				bm.logger.Println("Created public/default broker for unauthenticated access")
@@ -131,6 +134,9 @@ func (bm *BrokerManager) GetOrCreateBroker(username string) (*Broker, error) {
 	broker := NewBroker(bm.logger, db, false)
 	broker.SetUserLogger(userLogger, userLogPath)
 	bm.brokers[username] = broker
+
+	// Publish resubscribe system message for clients to re-register
+	broker.PublishSystemMessage("/server/action/resubscribe", "resubscribe")
 
 	// Start maintenance for this user's broker
 	go broker.StartMaintenance(bm.ctx)
