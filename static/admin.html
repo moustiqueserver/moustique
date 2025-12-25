@@ -915,12 +915,43 @@
                     return;
                 }
 
-                container.innerHTML = clients.sort().map(client => `
-                    <div class="list-item">
-                        <div class="item-title">${escapeHtml(client)}</div>
-                        <div class="item-meta">Active subscriber</div>
-                    </div>
-                `).join('');
+                // Sort by name
+                clients.sort((a, b) => {
+                    const nameA = typeof a === 'string' ? a : a.Name;
+                    const nameB = typeof b === 'string' ? b : b.Name;
+                    return nameA.localeCompare(nameB);
+                });
+
+                container.innerHTML = clients.map(client => {
+                    // Handle both old string format and new object format
+                    if (typeof client === 'string') {
+                        return `
+                            <div class="list-item">
+                                <div class="item-title">${escapeHtml(client)}</div>
+                                <div class="item-meta">Active subscriber</div>
+                            </div>
+                        `;
+                    } else {
+                        const metaParts = [];
+                        if (client.FirstSeenNiceDatetime) {
+                            metaParts.push(`First seen: ${escapeHtml(client.FirstSeenNiceDatetime)}`);
+                        }
+                        if (client.LatestPickupNiceDatetime) {
+                            metaParts.push(`Latest pickup: ${escapeHtml(client.LatestPickupNiceDatetime)}`);
+                        }
+                        if (client.RequestCounter) {
+                            metaParts.push(`Requests: ${client.RequestCounter}`);
+                        }
+                        const metaText = metaParts.length > 0 ? metaParts.join(' • ') : 'Active subscriber';
+
+                        return `
+                            <div class="list-item">
+                                <div class="item-title">${escapeHtml(client.Name)}</div>
+                                <div class="item-meta">${metaText}</div>
+                            </div>
+                        `;
+                    }
+                }).join('');
             } catch (error) {
                 container.innerHTML = '<div class="error">Failed to load clients</div>';
             }

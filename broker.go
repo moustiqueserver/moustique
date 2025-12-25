@@ -587,13 +587,13 @@ func (b *Broker) clearOldPosters() {
 	}
 }
 
-// GetClients returns list of client names
-func (b *Broker) GetClients() []string {
+// GetClients returns list of client information
+func (b *Broker) GetClients() []*Client {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	clients := make([]string, 0, len(b.messageQueue))
-	for client := range b.messageQueue {
+	clients := make([]*Client, 0, len(b.clients))
+	for _, client := range b.clients {
 		clients = append(clients, client)
 	}
 	return clients
