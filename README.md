@@ -11,13 +11,15 @@ Moustique is a simple, fast, and lightweight pub/sub message broker that uses pl
 
 **Moustique** offers:
 
-- 🎯 **Simple integration** - Easy to use clients available for Go, Python, JavaScript, and even Perl
+- 🎯 **Simple integration** - Easy to use clients available for Go, Python, JavaScript, Java, Perl, and CLI
 - 🚀 **High performance** - Written in Go, handles thousands of concurrent connections
 - 📡 **Pub/Sub communication** – subscribe to topics and receive messages in real-time
 - 🔑 **Key/Value storage** – store and retrieve values
 - 💾 **Persistent storage** - Messages survive restarts with SQLite backend
 - 🎨 **Built-in web UI** - Monitor and manage your broker from your browser
 - 🔍 **Powerful wildcards** - MQTT-style topic matching with `+` and `#`
+- 🔐 **Multi-tenant support** - Optional per-user authentication and isolated brokers
+- 🛠️ **Command-line tools** - Standalone CLI for quick interactions
 
 ## 🚀 Quick Start
 
@@ -31,7 +33,7 @@ chmod +x moustique
 # Or build from source
 git clone https://github.com/moustiqueserver/moustique.git
 cd moustique
-go build
+make all
 ```
 
 ### Run the server
@@ -52,6 +54,29 @@ go build
 # Open in browser
 http://localhost:33335/
 ```
+
+### Command-line Client
+
+Moustique includes a powerful CLI tool for interacting with the broker:
+
+```bash
+# Publish a message
+./moustique-cli -a pub -t /test/topic -m "Hello World"
+
+# Subscribe to a topic
+./moustique-cli -a sub -t /test/topic
+
+# Store a value
+./moustique-cli -a put -t /config/setting -m "value123"
+
+# With authentication
+./moustique-cli -a pub -u alice -pwd secret123 -t /private/topic -m "Secure message"
+
+# Connect to remote server
+./moustique-cli -h moustique.example.com -p 33334 -a pub -t /remote/topic -m "Hi"
+```
+
+See [CLI documentation](cmd/moustique-cli/README.md) for more details.
 
 ## 📚 Client Libraries
 
@@ -231,7 +256,49 @@ $mous->publish("/sensors/bedroom/temperature", "23.1");
 
 ## 🎯 Key Features
 
-### 1. Wildcard Subscriptions
+### 1. Multi-Tenant Support
+
+Moustique supports optional authentication with isolated brokers per user:
+
+```bash
+# Enable public access (no auth required) in config.yaml
+server:
+  allow_public: true
+
+# Or require authentication
+server:
+  allow_public: false
+```
+
+**Using authentication in clients:**
+
+```python
+# Python with authentication
+client = Moustique(ip="127.0.0.1", port="33334",
+                   client_name="MyApp",
+                   username="alice",
+                   password="secret123")
+```
+
+```javascript
+// JavaScript with authentication
+const client = new Moustique({
+    ip: '127.0.0.1',
+    port: '33334',
+    clientName: 'MyApp',
+    username: 'alice',
+    password: 'secret123'
+});
+```
+
+```bash
+# CLI with authentication
+./moustique-cli -a pub -u alice -pwd secret123 -t /topic -m "message"
+```
+
+Each authenticated user gets their own isolated broker, preventing cross-tenant data access.
+
+### 2. Wildcard Subscriptions
 
 Subscribe to multiple topics with MQTT-style wildcards:
 
@@ -241,7 +308,7 @@ Subscribe to multiple topics with MQTT-style wildcards:
 /home/+/+/humidity              # Multi-level wildcards
 ```
 
-### 2. Persistent Storage
+### 3. Persistent Storage
 
 Messages are stored in SQLite and survive server restarts:
 
@@ -253,19 +320,21 @@ curl http://localhost:33335/GETVAL?topic=ENCODED_TOPIC
 curl http://localhost:33335/GETVALSBYREGEX?topic=ENCODED_REGEX
 ```
 
-### 3. Built-in Monitoring
+### 4. Built-in Monitoring
 
 Beautiful web UI at `http://localhost:33335/` shows:
-- Real-time statistics
+- Real-time statistics (per-second rates)
 - Active clients and publishers
 - All topics and subscriptions
 - Message throughput
+- Per-user broker statistics (multi-tenant mode)
+- Server logs and user-specific logs
 
-### 4. Automatic Reconnection
+### 5. Automatic Reconnection
 
 Clients automatically resubscribe after server restarts—no manual intervention needed.
 
-### 5. Lightweight & Fast
+### 6. Lightweight & Fast
 
 - **Small footprint**: ~10MB binary, ~20MB RAM usage
 - **High throughput**: Handles 10,000+ messages/second
@@ -388,9 +457,56 @@ Contributions are welcome! Here's how to help:
 ```bash
 git clone https://github.com/moustiqueserver/moustique.git
 cd moustique
-go build
+
+# Build everything
+make all
+
+# Or build specific components
+make server      # Build server only
+make cli         # Build CLI only
+
+# Run with debug mode
 ./moustique -debug
 ```
+
+### Running Tests
+
+```bash
+# Run Go unit tests
+make test
+
+# Run client integration tests (requires running server)
+# First, start the server in another terminal:
+./moustique
+
+# Then run client tests:
+make test-clients
+
+# Or manually:
+./tests/test_all_clients.sh
+```
+
+See [tests/README.md](tests/README.md) for detailed testing documentation.
+
+### Building for Multiple Platforms
+
+```bash
+# Build all platforms
+make dist-all
+
+# Build specific platforms
+make server-linux    # Linux AMD64 and ARM64
+make server-darwin   # macOS Intel and Apple Silicon
+make server-windows  # Windows AMD64
+make cli-linux       # Linux (AMD64, ARM64, ARM)
+make cli-darwin      # macOS (Intel, Apple Silicon)
+make cli-windows     # Windows AMD64
+
+# Install locally
+sudo make install
+```
+
+See the [Makefile](Makefile) for all available targets.
 
 ## 📊 Performance
 
@@ -410,13 +526,18 @@ Benchmarks on a modest server (4 CPU cores, 8GB RAM):
 - [x] Wildcard subscriptions
 - [x] Persistent storage
 - [x] Web UI
+- [x] Multi-tenant support with authentication
+- [x] Command-line client (moustique-cli)
 - [x] JavaScript/TypeScript client
 - [x] Python client
 - [x] Go client
 - [x] Java client
+- [x] Perl client
 - [ ] TLS/HTTPS support
 - [ ] Authentication plugins
 - [ ] Message retention policies
+- [ ] Clustering support
+- [ ] WebSocket support
 
 ## 📜 License
 

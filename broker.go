@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
@@ -25,26 +26,48 @@ type Message struct {
 
 // Client represents a connected subscriber
 type Client struct {
-	Name                     string
-	FirstSeen                int64
-	FirstSeenNiceDatetime    string
-	LatestPickup             int64
-	LatestPickupNiceDatetime string
-	LatestSystemPickup       int64
-	RequestCounter           int
+	Name                     string `json:"Name"`
+	FirstSeen                int64  `json:"FirstSeen"`
+	FirstSeenNiceDatetime    string `json:"FirstSeenNiceDatetime"`
+	LatestPickup             int64  `json:"LatestPickup"`
+	LatestPickupNiceDatetime string `json:"LatestPickupNiceDatetime"`
+	LatestSystemPickup       int64  `json:"LatestSystemPickup"`
+	RequestCounter           int    `json:"RequestCounter"`
+	IP                       string `json:"IP"`
 }
 
 // Provider tracks message posters
 type Provider struct {
-	LatestPostsByTopic map[string]*Message `json:"latest_posts_by_topic"`
-	LatestPost         *Message            `json:"latest_post"`
-	IP                 string              `json:"ip"`
+	Name                     string              `json:"Name"`
+	LatestPostsByTopic       map[string]*Message `json:"latest_posts_by_topic"`
+	LatestPost               *Message            `json:"latest_post"`
+	IP                       string              `json:"IP"`
+	FirstSeen                int64               `json:"FirstSeen"`
+	FirstSeenNiceDatetime    string              `json:"FirstSeenNiceDatetime"`
+	LatestPostTime           int64               `json:"LatestPostTime"`
+	LatestPostNiceDatetime   string              `json:"LatestPostNiceDatetime"`
+	MessageCount             int                 `json:"MessageCount"`
+}
+
+// CrookInfo tracks bad actors making invalid requests
+type CrookInfo struct {
+	IP                 string `json:"IP"`
+	Attempts           int    `json:"Attempts"`
+	FirstSeen          int64  `json:"FirstSeen"`
+	FirstSeenNiceDatetime string `json:"FirstSeenNiceDatetime"`
+	LastSeen           int64  `json:"LastSeen"`
+	LastSeenNiceDatetime  string `json:"LastSeenNiceDatetime"`
+	BannedAt           int64  `json:"BannedAt"`
+	BannedAtNiceDatetime  string `json:"BannedAtNiceDatetime"`
+	IsBanned           bool   `json:"IsBanned"`
 }
 
 // Broker manages message routing and subscriptions
 type Broker struct {
 	mu                          sync.RWMutex
 	logger                      *log.Logger
+	userLogger                  *log.Logger
+	userLogPath                 string
 	db                          *Database
 	debug                       bool
 	messageQueue                map[string]map[string][]*Message
@@ -52,6 +75,7 @@ type Broker struct {
 	subscriptions               map[string][]string
 	clients                     map[string]*Client
 	providers                   map[string]*Provider
+	crooks                      map[string]*CrookInfo
 	topicExplosionCache         map[string][]string
 	messageCount                int64
 	minuteMessageCount          int64
@@ -69,12 +93,16 @@ type Broker struct {
 	minuteGetvalCount           int64
 	minutePickupCountTimestamp  int64
 	minuteGetvalCountTimestamp  int64
+	messagesProcessed           int64
 }
 
 // NewBroker creates a new message broker
 func NewBroker(logger *log.Logger, db *Database, debug bool) *Broker {
+	fmt.Printf("Creating new Broker instance\n")
 	return &Broker{
 		logger:              logger,
+		userLogger:          nil,
+		userLogPath:         "",
 		db:                  db,
 		debug:               debug,
 		messageQueue:        make(map[string]map[string][]*Message),
@@ -82,6 +110,7 @@ func NewBroker(logger *log.Logger, db *Database, debug bool) *Broker {
 		subscriptions:       make(map[string][]string),
 		clients:             make(map[string]*Client),
 		providers:           make(map[string]*Provider),
+		crooks:              make(map[string]*CrookInfo),
 		topicExplosionCache: make(map[string][]string),
 		messageQueueTimeout: 5 * time.Minute,
 		posterStatsTimeout:  1 * time.Hour,
@@ -89,8 +118,30 @@ func NewBroker(logger *log.Logger, db *Database, debug bool) *Broker {
 	}
 }
 
+// SetUserLogger sets up user-specific logging
+func (b *Broker) SetUserLogger(userLogger *log.Logger, logPath string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.userLogger = userLogger
+	b.userLogPath = logPath
+}
+
+// LogUser logs to the user-specific log
+func (b *Broker) LogUser(format string, v ...interface{}) {
+	if b.userLogger != nil {
+		b.userLogger.Printf(format, v...)
+	}
+}
+
+// GetUserLogPath returns the path to the user log file
+func (b *Broker) GetUserLogPath() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.userLogPath
+}
+
 // Subscribe adds a client subscription to a topic
-func (b *Broker) Subscribe(topic, clientName string) error {
+func (b *Broker) Subscribe(topic, clientName, ip string) error {
 	if clientName == "" {
 		return fmt.Errorf("client name cannot be empty")
 	}
@@ -109,14 +160,17 @@ func (b *Broker) Subscribe(topic, clientName string) error {
 			LatestPickupNiceDatetime: formatNiceDateTime(now),
 			LatestSystemPickup:       now,
 			RequestCounter:           0,
+			IP:                       ip,
 		}
 		if b.debug {
-			b.logger.Printf("New client: %s", clientName)
+			b.logger.Printf("New client: %s from IP: %s", clientName, ip)
 		}
+		b.LogUser("New client: %s from IP: %s", clientName, ip)
 	}
 
 	if !contains(b.subscriptions[topic], clientName) {
 		b.subscriptions[topic] = append(b.subscriptions[topic], clientName)
+		b.LogUser("Client %s subscribed to topic: %s", clientName, topic)
 	}
 
 	if b.messageQueue[clientName] == nil {
@@ -140,6 +194,7 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	b.messagesProcessed++
 	b.messageCount++
 	if b.messageCount%1000 == 0 {
 		b.logger.Printf("%s Processed %d messages", formatNiceDateTime(time.Now().Unix()), b.messageCount)
@@ -149,6 +204,8 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 		b.minuteMessageCount = 0
 	}
 	b.minuteMessageCount++
+
+	b.LogUser("Published message to %s from %s (IP: %s)", topic, from, ip)
 
 	if from == "" {
 		from = "UNKNOWN"
@@ -167,7 +224,11 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	provider, exists := b.providers[from]
 	if !exists {
 		provider = &Provider{
-			LatestPostsByTopic: make(map[string]*Message),
+			Name:                   from,
+			LatestPostsByTopic:     make(map[string]*Message),
+			FirstSeen:              updatedTime,
+			FirstSeenNiceDatetime:  formatNiceDateTime(updatedTime),
+			MessageCount:           0,
 		}
 		b.providers[from] = provider
 	}
@@ -175,6 +236,9 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	provider.LatestPostsByTopic[topic] = msg
 	provider.LatestPost = msg
 	provider.IP = ip
+	provider.LatestPostTime = updatedTime
+	provider.LatestPostNiceDatetime = formatNiceDateTime(updatedTime)
+	provider.MessageCount++
 
 	topics := b.explodeTopic(topic)
 	topics = append(topics, "#")
@@ -202,8 +266,32 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	return nil
 }
 
+// PublishSystemMessage publishes a system message that will be delivered to all clients
+func (b *Broker) PublishSystemMessage(topic, message string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	now := time.Now().Unix()
+	msg := &Message{
+		From:                "SERVER",
+		Topic:               topic,
+		Message:             message,
+		UpdatedTime:         now,
+		UpdatedNiceDatetime: formatNiceDateTime(now),
+		Subscribers:         make(map[string]bool),
+		IP:                  "127.0.0.1",
+	}
+
+	b.systemMessageQueue[topic] = append(b.systemMessageQueue[topic], msg)
+
+	if b.debug {
+		b.logger.Printf("Published system message to topic: %s", topic)
+	}
+	b.LogUser("Published system message to topic: %s", topic)
+}
+
 // Pickup retrieves messages for a client
-func (b *Broker) Pickup(clientName string) (map[string][]*Message, error) {
+func (b *Broker) Pickup(clientName, ip string) (map[string][]*Message, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -239,6 +327,7 @@ func (b *Broker) Pickup(clientName string) (map[string][]*Message, error) {
 		client.LatestPickupNiceDatetime = formatNiceDateTime(now)
 		client.LatestSystemPickup = now
 		client.RequestCounter++
+		client.IP = ip  // Update IP in case it changed
 	} else {
 		if b.debug {
 			b.logger.Printf("Pickup request for unknown client: %s", clientName)
@@ -332,8 +421,29 @@ func (b *Broker) GetStats() map[string]interface{} {
 	if secsRunning == 0 {
 		secsRunning = 1
 	}
+	if b.requestCount == 0 {
+		b.requestCount = 1
+	}
+	if b.minuteRequestCountTimestamp == 0 {
+		b.minuteRequestCountTimestamp = now
+	}
+	if b.minuteMessageCountTimestamp == 0 {
+		b.minuteMessageCountTimestamp = now
+	}
+	if b.minutePickupCountTimestamp == 0 {
+		b.minutePickupCountTimestamp = now
+	}
+	if b.minuteGetvalCountTimestamp == 0 {
+		b.minuteGetvalCountTimestamp = now
+	}
 
 	numGoroutines := runtime.NumGoroutine()
+
+	// Count stored values
+	valuesCount := 0
+	if b.db != nil {
+		valuesCount = b.db.CountValues()
+	}
 
 	return map[string]interface{}{
 		"started":              formatNiceDateTime(b.startedTime),
@@ -341,6 +451,7 @@ func (b *Broker) GetStats() map[string]interface{} {
 		"subscription_count":   len(b.subscriptions),
 		"goroutines":           numGoroutines,
 		"average_request_time": b.serveTime / float64(b.requestCount),
+		"values":               valuesCount,
 		"clients": map[string]interface{}{
 			"subscribers": len(b.messageQueue),
 			"posters":     len(b.providers),
@@ -456,6 +567,9 @@ func (b *Broker) getSystemMessages(clientName string) map[string][]*Message {
 
 // StartMaintenance starts background maintenance tasks
 func (b *Broker) StartMaintenance(ctx context.Context) {
+	if b.debug {
+		b.logger.Printf("StartMaintenance: Starting background maintenance tasks")
+	}
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -463,10 +577,16 @@ func (b *Broker) StartMaintenance(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			if b.debug {
+				b.logger.Printf("StartMaintenance: Context cancelled, stopping maintenance")
+			}
 			return
 		case <-ticker.C:
 			counter++
 			if counter%4 == 0 {
+				if b.debug {
+					b.logger.Printf("Running maintenance cycle %d", counter)
+				}
 				b.kickInactiveClients()
 				b.clearOldPosters()
 			}
@@ -523,26 +643,35 @@ func (b *Broker) clearOldPosters() {
 	}
 }
 
-// GetClients returns list of client names
-func (b *Broker) GetClients() []string {
+// GetClients returns list of client information
+func (b *Broker) GetClients() []*Client {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	clients := make([]string, 0, len(b.messageQueue))
-	for client := range b.messageQueue {
-		clients = append(clients, client)
+	// Use messageQueue to find active clients (those with queues)
+	// and return their Client info if available
+	clients := make([]*Client, 0, len(b.messageQueue))
+	for clientName := range b.messageQueue {
+		if client, exists := b.clients[clientName]; exists {
+			clients = append(clients, client)
+		} else {
+			// Fallback: create minimal client info if not in clients map
+			clients = append(clients, &Client{
+				Name: clientName,
+			})
+		}
 	}
 	return clients
 }
 
-// GetPosters returns list of poster names
-func (b *Broker) GetPosters() []string {
+// GetPosters returns list of poster information
+func (b *Broker) GetPosters() []*Provider {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	posters := make([]string, 0, len(b.providers))
-	for poster := range b.providers {
-		posters = append(posters, poster)
+	posters := make([]*Provider, 0, len(b.providers))
+	for _, provider := range b.providers {
+		posters = append(posters, provider)
 	}
 	return posters
 }
@@ -553,6 +682,80 @@ func (b *Broker) GetTopics() []string {
 	defer b.mu.RUnlock()
 
 	return b.db.GetKeys()
+}
+
+// RecordInvalidRequest records an invalid request from an IP and bans if needed
+func (b *Broker) RecordInvalidRequest(ip string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if ip == "" || ip == "UNKNOWN" {
+		return
+	}
+
+	now := time.Now().Unix()
+
+	crook, exists := b.crooks[ip]
+	if !exists {
+		// First offense - create entry and publish system notification
+		crook = &CrookInfo{
+			IP:                   ip,
+			Attempts:             1,
+			FirstSeen:            now,
+			FirstSeenNiceDatetime: formatNiceDateTime(now),
+			LastSeen:             now,
+			LastSeenNiceDatetime:  formatNiceDateTime(now),
+			IsBanned:             false,
+		}
+		b.crooks[ip] = crook
+
+		// Publish system notification about unauthorized connection
+		b.mu.Unlock()
+		b.PublishSystemMessage(
+			"/server/notification/unauthorized_connection",
+			fmt.Sprintf("Unauthorized connection attempt from %s", ip),
+		)
+		b.mu.Lock()
+
+		if b.debug {
+			b.logger.Printf("Recording invalid request from new IP: %s", ip)
+		}
+	} else {
+		// Repeat offender
+		crook.Attempts++
+		crook.LastSeen = now
+		crook.LastSeenNiceDatetime = formatNiceDateTime(now)
+	}
+
+	// Ban the IP using fail2ban
+	if !crook.IsBanned {
+		crook.IsBanned = true
+		crook.BannedAt = now
+		crook.BannedAtNiceDatetime = formatNiceDateTime(now)
+
+		b.logger.Printf("Banning IP %s after %d invalid attempts", ip, crook.Attempts)
+		b.LogUser("Banned IP: %s (attempts: %d)", ip, crook.Attempts)
+
+		// Execute fail2ban command in background
+		go func() {
+			cmd := exec.Command("sudo", "fail2ban-client", "set", "moustique", "banip", ip)
+			if err := cmd.Run(); err != nil {
+				b.logger.Printf("Warning: Failed to ban IP %s via fail2ban: %v", ip, err)
+			}
+		}()
+	}
+}
+
+// GetCrooks returns list of banned IPs
+func (b *Broker) GetCrooks() []*CrookInfo {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	crooks := make([]*CrookInfo, 0, len(b.crooks))
+	for _, crook := range b.crooks {
+		crooks = append(crooks, crook)
+	}
+	return crooks
 }
 
 func formatNiceDateTime(timestamp int64) string {

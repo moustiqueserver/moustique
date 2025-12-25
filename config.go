@@ -2,114 +2,107 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"io/ioutil"
 	"time"
 
 	"gopkg.in/yaml.v2"
 )
 
-// Config holds all configuration for Moustique
+// Config represents the application configuration
 type Config struct {
-	Server struct {
-		Port           int           `yaml:"port"`
-		Host           string        `yaml:"host"`
-		Timeout        time.Duration `yaml:"timeout"`
-		MaxConnections int           `yaml:"max_connections"`
-	} `yaml:"server"`
+	Server   ServerConfig   `yaml:"server"`
+	Database DatabaseConfig `yaml:"database"`
+	Logging  LoggingConfig  `yaml:"logging"`
+	Security SecurityConfig `yaml:"security"`
+}
 
-	Database struct {
-		Path string `yaml:"path"`
-	} `yaml:"database"`
+// ServerConfig represents server configuration
+type ServerConfig struct {
+	Port        int           `yaml:"port"`
+	Timeout     time.Duration `yaml:"timeout"`
+	AllowPublic *bool         `yaml:"allow_public"` // Pointer to detect if set
+}
 
-	Security struct {
-		AllowedIPs       []string `yaml:"allowed_ips"`
-		TailscaleEnabled bool     `yaml:"tailscale_enabled"`
-		PasswordFile     string   `yaml:"password_file"`
-	} `yaml:"security"`
+// DatabaseConfig represents database configuration
+type DatabaseConfig struct {
+	Path string `yaml:"path"`
+}
 
-	Logging struct {
-		Level string `yaml:"level"`
-		File  string `yaml:"file"`
-	} `yaml:"logging"`
+// LoggingConfig represents logging configuration
+type LoggingConfig struct {
+	Level string `yaml:"level"`
+	File  string `yaml:"file"`
+}
 
-	Performance struct {
-		MessageQueueTimeout time.Duration `yaml:"message_queue_timeout"`
-		PosterStatsTimeout  time.Duration `yaml:"poster_stats_timeout"`
-		MaintenanceInterval time.Duration `yaml:"maintenance_interval"`
-	} `yaml:"performance"`
+// SecurityConfig represents security configuration
+type SecurityConfig struct {
+	AllowedPeers []string `yaml:"allowed_peers"`
+	BlockedPeers []string `yaml:"blocked_peers"`
 }
 
 // LoadConfig loads configuration from a YAML file
 func LoadConfig(path string) (*Config, error) {
-	// Set defaults
-	config := &Config{}
-	config.Server.Port = 33335
-	config.Server.Host = "0.0.0.0"
-	config.Server.Timeout = 5 * time.Second
-	config.Server.MaxConnections = 1000
-	config.Database.Path = "./data/moustique.db"
-	config.Security.TailscaleEnabled = true
-	config.Security.PasswordFile = "./data/.moustique_pwd"
-	config.Logging.Level = "info"
-	config.Logging.File = "./logs/moustique.log"
-	config.Performance.MessageQueueTimeout = 5 * time.Minute
-	config.Performance.PosterStatsTimeout = 1 * time.Hour
-	config.Performance.MaintenanceInterval = 30 * time.Second
-
-	// If /etc/moustique/config.yaml exists, use it as default
-	if _, err := os.Stat("/etc/moustique/config.yaml"); err == nil && path == "config.yaml" {
-		path = "/etc/moustique/config.yaml"
-		fmt.Println("Using system config file at %s", path)
-	}
-	// If config file doesn't exist, return defaults
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return config, nil
-	}
-
-	// Read config file
-	data, err := os.ReadFile(path)
+	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Parse YAML
-	if err := yaml.Unmarshal(data, config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	var config Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	return config, nil
+	// Set defaults
+	if config.Server.Port == 0 {
+		config.Server.Port = 33334
+	}
+	if config.Server.Timeout == 0 {
+		config.Server.Timeout = 30 * time.Second
+	}
+	if config.Server.AllowPublic == nil {
+		defaultVal := false
+		config.Server.AllowPublic = &defaultVal
+	}
+	if config.Database.Path == "" {
+		config.Database.Path = "./data"
+	}
+	if config.Logging.Level == "" {
+		config.Logging.Level = "info"
+	}
+
+	return &config, nil
 }
 
-// SaveConfig saves the current configuration to a YAML file
-func SaveConfig(path string, config *Config) error {
-	data, err := yaml.Marshal(config)
+// GenerateDefaultConfig generates a default configuration file
+func GenerateDefaultConfig(path string) error {
+	defaultAllowPublic := false
+	config := Config{
+		Server: ServerConfig{
+			Port:        33334,
+			Timeout:     30 * time.Second,
+			AllowPublic: &defaultAllowPublic,
+		},
+		Database: DatabaseConfig{
+			Path: "./data",
+		},
+		Logging: LoggingConfig{
+			Level: "info",
+			File:  "",
+		},
+		Security: SecurityConfig{
+			AllowedPeers: []string{},
+			BlockedPeers: []string{},
+		},
+	}
+
+	data, err := yaml.Marshal(&config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := ioutil.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil
-}
-
-// GenerateDefaultConfig creates a default config.yaml file
-func GenerateDefaultConfig(path string) error {
-	config := &Config{}
-	config.Server.Port = 33335
-	config.Server.Host = "0.0.0.0"
-	config.Server.Timeout = 5 * time.Second
-	config.Server.MaxConnections = 1000
-	config.Database.Path = "./data/moustique.db"
-	config.Security.AllowedIPs = []string{"192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"}
-	config.Security.TailscaleEnabled = true
-	config.Security.PasswordFile = "./data/.moustique_pwd"
-	config.Logging.Level = "info"
-	config.Logging.File = "./logs/moustique.log"
-	config.Performance.MessageQueueTimeout = 5 * time.Minute
-	config.Performance.PosterStatsTimeout = 1 * time.Hour
-	config.Performance.MaintenanceInterval = 30 * time.Second
-
-	return SaveConfig(path, config)
 }

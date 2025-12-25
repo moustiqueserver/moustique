@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moustique - Simple, Fast Message Broker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f8f9fa;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%);
+            color: white;
+            padding: 80px 0 100px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h100v100H0z" fill="none"/><path d="M50 10l5 15h15l-12 9 5 15-13-9-13 9 5-15-12-9h15z" fill="rgba(255,255,255,0.05)"/></svg>');
+            opacity: 0.1;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .logo-image {
+            width: 120px;
+            height: 120px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .logo {
+            font-size: 3.5em;
+            font-weight: bold;
+            position: relative;
+            display: inline-block;
+        }
+
+        .tagline {
+            font-size: 1.5em;
+            margin-bottom: 30px;
+            opacity: 0.95;
+        }
+
+        .cta-buttons {
+            margin-top: 40px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 15px 35px;
+            margin: 10px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s;
+            font-size: 1.1em;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%);
+            color: white;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(86, 171, 47, 0.4);
+            background: linear-gradient(135deg, #4a9629 0%, #96d055 100%);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        /* Features */
+        .features {
+            padding: 80px 0;
+            background: white;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5em;
+            margin-bottom: 60px;
+            color: #2d3748;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 40px;
+            margin-top: 40px;
+        }
+
+        .feature-card {
+            padding: 30px;
+            border-radius: 12px;
+            background: #f8f9fa;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .feature-icon {
+            font-size: 3em;
+            margin-bottom: 20px;
+        }
+
+        .feature-title {
+            font-size: 1.5em;
+            margin-bottom: 15px;
+            color: #2d3748;
+        }
+
+        .feature-desc {
+            color: #4a5568;
+            line-height: 1.8;
+        }
+
+        /* Quick Start */
+        .quickstart {
+            padding: 80px 0;
+            background: #f8f9fa;
+        }
+
+        .code-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 0;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .code-tab {
+            padding: 15px 30px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            color: #718096;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .code-tab.active {
+            color: #56ab2f;
+            border-bottom-color: #56ab2f;
+        }
+
+        .code-content {
+            display: none;
+            background: #2d3748;
+            color: #f7fafc;
+            padding: 30px;
+            border-radius: 0 0 12px 12px;
+            overflow-x: auto;
+        }
+
+        .code-content.active {
+            display: block;
+        }
+
+        pre {
+            margin: 0;
+            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+
+        .code-comment {
+            color: #a0aec0;
+        }
+
+        .code-string {
+            color: #68d391;
+        }
+
+        .code-keyword {
+            color: #fc8181;
+        }
+
+        .code-function {
+            color: #63b3ed;
+        }
+
+        /* Cloud Service */
+        .cloud-service {
+            padding: 80px 0;
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%);
+            color: white;
+        }
+
+        .cloud-box {
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 40px;
+            margin-top: 40px;
+            backdrop-filter: blur(10px);
+        }
+
+        .cloud-features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            margin: 30px 0;
+        }
+
+        .cloud-feature {
+            text-align: center;
+        }
+
+        .cloud-feature-icon {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+        }
+
+        .pricing-badge {
+            display: inline-block;
+            background: #48bb78;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+
+        /* Admin Demo */
+        .admin-demo {
+            padding: 80px 0;
+            background: white;
+        }
+
+        .demo-box {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 40px;
+            margin-top: 40px;
+        }
+
+        .demo-screenshot {
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            margin: 20px 0;
+        }
+
+        .demo-login {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .demo-credentials {
+            font-family: monospace;
+            background: #2d3748;
+            color: #68d391;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+
+        /* Footer */
+        footer {
+            background: #2d3748;
+            color: white;
+            padding: 40px 0;
+            text-align: center;
+        }
+
+        .footer-links {
+            margin: 20px 0;
+        }
+
+        .footer-links a {
+            color: white;
+            text-decoration: none;
+            margin: 0 15px;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+
+        .footer-links a:hover {
+            opacity: 1;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .logo {
+                font-size: 2.5em;
+            }
+
+            .tagline {
+                font-size: 1.2em;
+            }
+
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <div class="logo-container">
+                <img src="moustique_logo.png" alt="Moustique Logo" class="logo-image">
+                <h1 class="logo">Moustique</h1>
+            </div>
+            <p class="tagline">A lightweight, fast message broker that just works</p>
+            <p>Simple pub/sub messaging for Python, JavaScript, Go, Perl, and more</p>
+            <div class="cta-buttons">
+                <a href="#quickstart" class="btn btn-primary" onclick="event.preventDefault(); document.getElementById('quickstart').scrollIntoView({ behavior: 'smooth' });">Get Started in 30 Seconds</a>
+                <a href="#" class="btn btn-secondary" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Try Cloud Service (Free)</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Quick Start -->
+    <section class="quickstart" id="quickstart">
+        <div class="container">
+            <h2 class="section-title">Get Started in 30 Seconds</h2>
+
+            <div class="code-tabs">
+                <button class="code-tab active" onclick="showTab('python')">Python</button>
+                <button class="code-tab" onclick="showTab('javascript')">JavaScript</button>
+                <button class="code-tab" onclick="showTab('go')">Go</button>
+                <button class="code-tab" onclick="showTab('cli')">CLI</button>
+            </div>
+
+            <div id="python" class="code-content active">
+<pre><span class="code-comment"># Install</span>
+pip install moustique
+
+<span class="code-comment"># Publish a message</span>
+<span class="code-keyword">from</span> moustique <span class="code-keyword">import</span> Moustique
+
+client = Moustique(<span class="code-string">"localhost"</span>, <span class="code-string">"33334"</span>, <span class="code-string">"my-app"</span>)
+<span class="code-comment"># Or use cloud: Moustique("cloud.moustique.xyz", "80", "my-app")</span>
+client.publish(<span class="code-string">"/sensors/temperature"</span>, <span class="code-string">"23.5"</span>)
+
+<span class="code-comment"># Subscribe to messages</span>
+<span class="code-keyword">def</span> <span class="code-function">on_message</span>(topic, message, from_name):
+    <span class="code-function">print</span>(<span class="code-string">f"Got: {message}"</span>)
+
+client.subscribe(<span class="code-string">"/sensors/#"</span>, on_message)
+<span class="code-keyword">while</span> <span class="code-keyword">True</span>:
+    client.pickup()  <span class="code-comment"># Poll for messages</span>
+    time.sleep(<span class="code-string">1</span>)</pre>
+            </div>
+
+            <div id="javascript" class="code-content">
+<pre><span class="code-comment">// Install</span>
+npm install moustique
+
+<span class="code-comment">// Publish a message</span>
+<span class="code-keyword">import</span> { Moustique } <span class="code-keyword">from</span> <span class="code-string">'moustique'</span>;
+
+<span class="code-keyword">const</span> client = <span class="code-keyword">new</span> <span class="code-function">Moustique</span>({
+    ip: <span class="code-string">'localhost'</span>,
+    port: <span class="code-string">'33334'</span>,
+    clientName: <span class="code-string">'my-app'</span>
+});
+<span class="code-comment">// Or use cloud: ip: 'cloud.moustique.xyz', port: '80'</span>
+
+<span class="code-keyword">await</span> client.<span class="code-function">publish</span>(<span class="code-string">'/sensors/temperature'</span>, <span class="code-string">'23.5'</span>);
+
+<span class="code-comment">// Subscribe to messages</span>
+<span class="code-keyword">await</span> client.<span class="code-function">subscribe</span>(<span class="code-string">'/sensors/#'</span>, (topic, message, from) => {
+    console.<span class="code-function">log</span>(<span class="code-string">`Got: ${message}`</span>);
+});
+
+<span class="code-function">setInterval</span>(<span class="code-keyword">async</span> () => {
+    <span class="code-keyword">await</span> client.<span class="code-function">pickup</span>();  <span class="code-comment">// Poll for messages</span>
+}, <span class="code-string">1000</span>);</pre>
+            </div>
+
+            <div id="go" class="code-content">
+<pre><span class="code-comment">// Install</span>
+go get github.com/moustiqueserver/moustique/clients/go/moustique
+
+<span class="code-comment">// Publish a message</span>
+<span class="code-keyword">package</span> main
+
+<span class="code-keyword">import</span> <span class="code-string">"github.com/moustiqueserver/moustique/clients/go/moustique"</span>
+
+<span class="code-keyword">func</span> <span class="code-function">main</span>() {
+    client := moustique.<span class="code-function">New</span>(<span class="code-string">"localhost"</span>, <span class="code-string">"33334"</span>, <span class="code-string">"my-app"</span>, <span class="code-string">""</span>, <span class="code-string">""</span>)
+    <span class="code-comment">// Or use cloud: New("cloud.moustique.xyz", "80", "my-app", "", "")</span>
+    client.<span class="code-function">Publish</span>(<span class="code-string">"/sensors/temperature"</span>, <span class="code-string">"23.5"</span>)
+
+    <span class="code-comment">// Subscribe to messages</span>
+    client.<span class="code-function">Subscribe</span>(<span class="code-string">"/sensors/#"</span>, <span class="code-keyword">func</span>(topic, message, from <span class="code-keyword">string</span>) {
+        fmt.<span class="code-function">Printf</span>(<span class="code-string">"Got: %s\n"</span>, message)
+    })
+
+    <span class="code-keyword">for</span> {
+        client.<span class="code-function">Pickup</span>()
+        time.<span class="code-function">Sleep</span>(time.Second)
+    }
+}</pre>
+            </div>
+
+            <div id="cli" class="code-content">
+<pre><span class="code-comment"># Download CLI</span>
+curl -O https://moustique.xyz/downloads/moustique-cli
+chmod +x moustique-cli
+
+<span class="code-comment"># Publish a message</span>
+./moustique-cli -h localhost -p 33334 -a pub \
+    -t /sensors/temperature -m "23.5"
+
+<span class="code-comment"># Subscribe to messages (in another terminal)</span>
+./moustique-cli -h localhost -p 33334 -a sub \
+    -t /sensors/# -c my-subscriber
+
+<span class="code-comment"># Check server version</span>
+./moustique-cli -h localhost -p 33334 -a version</pre>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- Features -->
+    <section class="features">
+        <div class="container">
+            <h2 class="section-title">Why Moustique?</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">Blazing Fast</h3>
+                    <p class="feature-desc">Written in Go for maximum performance. Handle thousands of messages per second with minimal overhead.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3 class="feature-title">Dead Simple</h3>
+                    <p class="feature-desc">No complex configuration. No dependencies. Install and start using in under a minute.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌐</div>
+                    <h3 class="feature-title">Multi-Language</h3>
+                    <p class="feature-desc">Client libraries for Python, JavaScript, Go, Perl. HTTP-based protocol works with any language.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3 class="feature-title">Secure & Multi-Tenant</h3>
+                    <p class="feature-desc">Built-in authentication, user isolation, and rate limiting. Perfect for shared environments.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3 class="feature-title">Beautiful Admin UI</h3>
+                    <p class="feature-desc">Monitor topics, clients, and statistics in real-time with our intuitive web interface.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💾</div>
+                    <h3 class="feature-title">Persistent Storage</h3>
+                    <p class="feature-desc">SQLite-backed message queues and key-value storage. Never lose important messages.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- Cloud Service -->
+    <section class="cloud-service">
+        <div class="container">
+            <h2 class="section-title" style="color: white;">Try Moustique Cloud</h2>
+            <p style="text-align: center; font-size: 1.2em; opacity: 0.95;">
+                Start building immediately with our hosted service
+            </p>
+
+            <div class="cloud-box">
+                <h3 style="font-size: 1.8em; margin-bottom: 20px;">🚀 cloud.moustique.xyz</h3>
+
+                <div class="cloud-features">
+                    <div class="cloud-feature">
+                        <div class="cloud-feature-icon">✨</div>
+                        <h4>Free Tier</h4>
+                        <p>1,000 messages/day<br>No credit card required</p>
+                    </div>
+                    <div class="cloud-feature">
+                        <div class="cloud-feature-icon">⚙️</div>
+                        <h4>Instant Setup</h4>
+                        <p>Your own isolated broker<br>Ready in seconds</p>
+                    </div>
+                    <div class="cloud-feature">
+                        <div class="cloud-feature-icon">📈</div>
+                        <h4>Easy Scaling</h4>
+                        <p>Upgrade anytime<br>Pay as you grow</p>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-top: 40px;">
+                    <p style="font-size: 1.1em; margin-bottom: 20px;">
+                        <strong>Try it now with our demo account:</strong>
+                    </p>
+                    <div class="demo-credentials">
+                        Username: <strong>demo</strong><br>
+                        Password: <strong>demo123</strong>
+                    </div>
+                    <div style="margin-top: 30px;">
+                        <a href="#" class="btn btn-primary" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Launch Cloud Console</a>
+                        <a href="#" class="btn btn-secondary" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/signup'; return false;">Create Free Account</a>
+                    </div>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 40px; opacity: 0.9;">
+                <p><strong>Coming Soon:</strong> Pro plans with higher limits, SLA guarantees, and priority support</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Admin Demo -->
+    <section class="admin-demo">
+        <div class="container">
+            <h2 class="section-title">Powerful Admin Interface</h2>
+            <p style="text-align: center; font-size: 1.2em; color: #4a5568; margin-bottom: 40px;">
+                Monitor and manage your message broker with ease
+            </p>
+
+            <div class="demo-box">
+                <h3 style="margin-bottom: 30px; font-size: 1.6em;">Real-time Monitoring</h3>
+
+                <div class="feature-grid" style="margin-top: 30px;">
+                    <div>
+                        <h4 style="color: #56ab2f; margin-bottom: 15px;">📊 Live Statistics</h4>
+                        <ul style="line-height: 2; color: #4a5568;">
+                            <li>Active clients and connections</li>
+                            <li>Message throughput metrics</li>
+                            <li>Topics and subscriptions</li>
+                            <li>Request rate monitoring</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: #56ab2f; margin-bottom: 15px;">👥 User Management</h4>
+                        <ul style="line-height: 2; color: #4a5568;">
+                            <li>Create and manage users</li>
+                            <li>Set rate limits per user</li>
+                            <li>View user activity logs</li>
+                            <li>Multi-tenant isolation</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: #56ab2f; margin-bottom: 15px;">🔍 Debugging Tools</h4>
+                        <ul style="line-height: 2; color: #4a5568;">
+                            <li>Live message inspection</li>
+                            <li>Client connection details</li>
+                            <li>Server logs viewer</li>
+                            <li>Performance diagnostics</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="demo-login" style="margin-top: 40px;">
+                    <h4 style="margin-bottom: 15px;">🎮 Try the Admin Demo</h4>
+                    <p style="color: #4a5568; margin-bottom: 15px;">
+                        Experience the admin interface with our test account:
+                    </p>
+                    <div class="demo-credentials">
+                        URL: <strong><span id="admin-url"></span>/admin</strong><br>
+                        Username: <strong>demo</strong><br>
+                        Password: <strong>demo123</strong>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <a href="#" class="btn btn-primary" style="background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%); color: white;" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Open Admin Interface</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px;">
+                <img src="moustique_logo.png" alt="Moustique" style="width: 40px; height: 40px;">
+                <p style="font-size: 1.2em; margin: 0;">
+                    Moustique - Simple, Fast Message Broker
+                </p>
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/moustiqueserver/moustique">GitHub</a>
+                <a href="#quickstart" onclick="event.preventDefault(); document.getElementById('quickstart').scrollIntoView({ behavior: 'smooth' });">Documentation</a>
+                <a href="#" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Cloud Service</a>
+                <a href="mailto:support@moustique.xyz">Contact</a>
+            </div>
+            <p style="opacity: 0.7; margin-top: 20px;">
+                &copy; 2024 Moustique. Open Source under GNU GPLv3 License.
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // Set current hostname for demo URL
+        document.addEventListener('DOMContentLoaded', function() {
+            const protocol = window.location.protocol;
+            const hostname = window.location.hostname;
+            const port = window.location.port ? ':' + window.location.port : '';
+            document.getElementById('admin-url').textContent = protocol + '//' + hostname + port;
+        });
+
+        function showTab(language) {
+            // Hide all tabs
+            document.querySelectorAll('.code-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.code-content').forEach(content => {
+                content.classList.remove('active');
+            });
+
+            // Show selected tab
+            event.target.classList.add('active');
+            document.getElementById(language).classList.add('active');
+        }
+
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

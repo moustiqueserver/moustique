@@ -2,6 +2,8 @@
 /bin
 /moustique_server
 /moustique_client
+/moustique
+/moustique-cli
 *.exe
 #Java
 /clients/java/target/

@@ -1,13 +1,28 @@
 {
   "name": "moustique-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Moustique HTTP pub/sub client for JavaScript/Node.js",
   "main": "moustique/index.js",
   "private": false,
   "type": "module",
-  "keywords": ["moustique", "pubsub", "realtime", "http"],
-  "author": "Moustique",
-  "license": "GNU GPLv3",
+  "keywords": ["moustique", "pubsub", "realtime", "http", "messaging", "broker"],
+  "author": {
+    "name": "Moustique",
+    "email": "support@moustique.xyz"
+  },
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moustiqueserver/moustique.git",
+    "directory": "clients/javascript"
+  },
+  "bugs": {
+    "url": "https://github.com/moustiqueserver/moustique/issues"
+  },
+  "homepage": "https://github.com/moustiqueserver/moustique#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "test": "node tests/test_client.js"
   }

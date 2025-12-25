@@ -10,17 +10,18 @@ func Enc(s string) string {
 	if s == "" {
 		return ""
 	}
-	b64 := base64.StdEncoding.EncodeToString([]byte(s))
-	return rotate(b64)
+	// Must match server encoding: ROT13 first, then Base64
+	rotated := rotate(s)
+	return base64.StdEncoding.EncodeToString([]byte(rotated))
 }
 
 func Dec(s string) string {
 	if s == "" {
 		return ""
 	}
-	rotated := rotate(s)
-	decoded, _ := base64.StdEncoding.DecodeString(rotated)
-	return string(decoded)
+	// Reverse of encode: Base64 decode first, then ROT13
+	decoded, _ := base64.StdEncoding.DecodeString(s)
+	return rotate(string(decoded))
 }
 
 func rotate(s string) string {

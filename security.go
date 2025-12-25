@@ -39,6 +39,11 @@ func (sc *SecurityChecker) IsPeerAllowed(peerHost string) bool {
 		return false
 	}
 
+	// Localhost check
+	if peerHost == "127.0.0.1" || peerHost == "::1" || peerHost == "localhost" {
+		return true
+	}
+
 	// Local network check (fastest)
 	if sc.localNetRegex.MatchString(peerHost) {
 		return true

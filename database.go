@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sync"
 
@@ -20,6 +22,13 @@ type Database struct {
 
 // NewDatabase creates a new database instance
 func NewDatabase(path string) (*Database, error) {
+	// Skapa katalogen om den inte finns (t.ex. för "data/app.db" skapar den "data/")
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create database directory: %w", err)
+		}
+	}
+
 	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -142,6 +151,14 @@ func (d *Database) HasValue(key string) bool {
 
 	_, exists := d.values[key]
 	return exists
+}
+
+// CountValues returns the number of stored values
+func (d *Database) CountValues() int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	return len(d.values)
 }
 
 // GetKeys returns all keys

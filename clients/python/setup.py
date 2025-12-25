@@ -4,8 +4,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="moustique-client",
-    version="1.0.0",
+    name="moustique_client",
+    version="0.1.1",
     author="Moustique",
     author_email="mulf@protonmail.com",
     description="Python client for Moustique messaging server",
@@ -24,7 +24,7 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "License :: OSI Approved :: GNU GPLv3",
+        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.7',

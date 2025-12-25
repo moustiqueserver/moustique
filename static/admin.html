@@ -257,7 +257,6 @@
             padding: 15px;
             border-bottom: 1px solid #eee;
             transition: background 0.2s;
-            cursor: pointer;
         }
 
         .list-item:hover {
@@ -313,80 +312,55 @@
             margin-bottom: 20px;
         }
 
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 80vh;
+        .log-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            max-height: 600px;
             overflow-y: auto;
         }
 
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .modal-header h2 {
-            color: #667eea;
-        }
-
-        .close-btn {
-            background: none;
-            border: none;
-            font-size: 1.5em;
-            cursor: pointer;
-            color: #999;
-        }
-
-        .close-btn:hover {
-            color: #333;
-        }
-
-        .message-details {
+        .message-item {
             background: #f8f9fa;
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 10px;
+            border-left: 4px solid #667eea;
         }
 
-        .message-details dt {
+        .message-topic {
             font-weight: bold;
             color: #667eea;
-            margin-top: 10px;
+            margin-bottom: 5px;
         }
 
-        .message-details dd {
-            margin-left: 0;
-            padding: 5px 0;
-            word-break: break-all;
+        .message-content {
+            color: #333;
+            margin: 5px 0;
         }
 
-        .publish-form {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
+        .message-from {
+            color: #999;
+            font-size: 0.85em;
+            margin-top: 5px;
+        }
+
+        .clear-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+
+        .clear-btn:hover {
+            background: #c0392b;
         }
 
         @keyframes pulse {
@@ -417,6 +391,10 @@
             <div id="login-error" class="error-msg"></div>
             <form id="login-form" onsubmit="return handleLogin(event)">
                 <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required autocomplete="username">
+                </div>
+                <div class="form-group">
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password">
                 </div>
@@ -432,7 +410,7 @@
                 <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cg%3E%3Cellipse cx='100' cy='120' rx='15' ry='35' fill='%23ff6b6b' stroke='%23661111' stroke-width='3'/%3E%3Cellipse cx='100' cy='90' rx='20' ry='25' fill='%23ff8787' stroke='%23661111' stroke-width='3'/%3E%3Ccircle cx='100' cy='60' r='22' fill='%23ffa5a5' stroke='%23661111' stroke-width='3'/%3E%3Ccircle cx='93' cy='55' r='6' fill='%23fff'/%3E%3Ccircle cx='107' cy='55' r='6' fill='%23fff'/%3E%3Ccircle cx='93' cy='55' r='3' fill='%23661111'/%3E%3Ccircle cx='107' cy='55' r='3' fill='%23661111'/%3E%3Cpath d='M85,35 Q82,25 85,20' stroke='%23661111' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M115,35 Q118,25 115,20' stroke='%23661111' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Cellipse cx='65' cy='85' rx='30' ry='8' fill='%23ffd4d4' stroke='%23661111' stroke-width='2' transform='rotate(-25 65 85)'/%3E%3Cellipse cx='135' cy='85' rx='30' ry='8' fill='%23ffd4d4' stroke='%23661111' stroke-width='2' transform='rotate(25 135 85)'/%3E%3Cellipse cx='50' cy='110' rx='25' ry='6' fill='%23ffd4d4' stroke='%23661111' stroke-width='2' transform='rotate(-35 50 110)'/%3E%3Cellipse cx='150' cy='110' rx='25' ry='6' fill='%23ffd4d4' stroke='%23661111' stroke-width='2' transform='rotate(35 150 110)'/%3E%3Cline x1='85' y1='145' x2='75' y2='165' stroke='%23661111' stroke-width='3' stroke-linecap='round'/%3E%3Cline x1='90' y1='150' x2='85' y2='175' stroke='%23661111' stroke-width='3' stroke-linecap='round'/%3E%3Cline x1='110' y1='150' x2='115' y2='175' stroke='%23661111' stroke-width='3' stroke-linecap='round'/%3E%3Cline x1='115' y1='145' x2='125' y2='165' stroke='%23661111' stroke-width='3' stroke-linecap='round'/%3E%3Cline x1='80' y1='100' x2='65' y2='110' stroke='%23661111' stroke-width='3' stroke-linecap='round'/%3E%3Cline x1='120' y1='100' x2='135' y2='110' stroke='%23661111' stroke-width='3' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E" alt="Moustique">
                 <div>
                     <h1>Moustique</h1>
-                    <p class="subtitle">MQTT over HTTP <span class="live-indicator"></span></p>
+                    <p class="subtitle">User: <span id="current-user">-</span> <span class="live-indicator"></span></p>
                 </div>
             </div>
             <button class="logout-btn" onclick="logout()">Logout</button>
@@ -441,28 +419,29 @@
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-label">Total Requests</div>
-                <div class="stat-value" id="total-requests">-</div>
-                <div class="stat-subvalue" id="req-per-sec">- req/s</div>
+                <div class="stat-value" id="total-requests">0</div>
+                <div class="stat-subvalue" id="req-per-sec">0 req/s</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Messages Processed</div>
-                <div class="stat-value" id="total-messages">-</div>
-                <div class="stat-subvalue" id="msg-per-sec">- msg/s</div>
+                <div class="stat-value" id="total-messages">0</div>
+                <div class="stat-subvalue" id="msg-per-sec">0 msg/s</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Active Clients</div>
-                <div class="stat-value" id="active-clients">-</div>
-                <div class="stat-subvalue" id="active-posters">- posters</div>
+                <div class="stat-value" id="active-clients">0</div>
+                <div class="stat-subvalue" id="active-posters">0 posters</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Topics</div>
-                <div class="stat-value" id="total-topics">-</div>
-                <div class="stat-subvalue" id="goroutines">- goroutines</div>
+                <div class="stat-value" id="total-topics">0</div>
+                <div class="stat-subvalue" id="values-count">0 values</div>
             </div>
         </div>
 
         <div class="tabs">
             <button class="tab active" onclick="showTab('publish', event)">Publish</button>
+            <button class="tab" onclick="showTab('subscribe', event)">Subscribe</button>
             <button class="tab" onclick="showTab('log', event)">Log</button>
             <button class="tab" onclick="showTab('clients', event)">Clients</button>
             <button class="tab" onclick="showTab('posters', event)">Posters</button>
@@ -490,10 +469,32 @@
             </form>
         </div>
 
+        <div id="subscribe-content" class="content-box">
+            <h2 style="margin-bottom: 20px;">Subscribe to Topic</h2>
+            <div id="subscribe-error" class="error-msg"></div>
+            <div id="subscribe-success" class="success-msg"></div>
+            <form id="subscribe-form" onsubmit="return handleSubscribe(event)" style="margin-bottom: 30px;">
+                <div class="form-group">
+                    <label for="sub-topic">Topic</label>
+                    <input type="text" id="sub-topic" placeholder="/my/topic or /sensor/+" required>
+                </div>
+                <div class="form-group">
+                    <label for="sub-client">Client Name</label>
+                    <input type="text" id="sub-client" placeholder="web-subscriber" required value="web-admin">
+                </div>
+                <button type="submit" class="btn-primary">Subscribe</button>
+                <button type="button" class="clear-btn" onclick="clearMessages()">Clear Messages</button>
+            </form>
+            <h3 style="margin-bottom: 15px;">Received Messages <span id="message-count">(0)</span></h3>
+            <div id="messages-container" class="item-list">
+                <div class="loading">No messages yet. Subscribe to a topic to start receiving messages.</div>
+            </div>
+        </div>
+
         <div id="log-content" class="content-box">
             <button class="refresh-btn" onclick="loadLog()">🔄 Refresh Log</button>
-            <div style="background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.9em; max-height: 600px; overflow-y: auto;" id="log-container">
-                <div class="loading" style="color: #999;">Loading log...</div>
+            <div class="log-container" id="log-container">
+                <div class="loading" style="color: #999;">Loading broker log...</div>
             </div>
         </div>
 
@@ -521,28 +522,21 @@
                 <li>✅ HTTP-based communication</li>
                 <li>✅ Wildcard subscriptions (+, #)</li>
                 <li>✅ Persistent message storage</li>
+                <li>✅ Multi-tenant with user isolation</li>
                 <li>✅ Built-in web administration</li>
                 <li>✅ High performance with Go</li>
             </ul>
         </div>
     </div>
 
-    <!-- Modal for message details -->
-    <div id="message-modal" class="modal" onclick="closeModal(event)">
-        <div class="modal-content" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <h2>Message Details</h2>
-                <button class="close-btn" onclick="closeModal()">&times;</button>
-            </div>
-            <dl class="message-details" id="message-details"></dl>
-        </div>
-    </div>
-
     <script>
         let statsInterval;
+        let pickupInterval;
+        let username = '';
         let password = '';
         const API_BASE = window.location.origin;
-        let topicsData = {};
+        let subscribedTopics = new Set();
+        let receivedMessages = [];
 
         function rot13(str) {
             return str.replace(/[a-zA-Z]/g, function(c) {
@@ -552,47 +546,58 @@
             });
         }
 
-        function encode(str) {
-            return rot13(btoa(str));
+        function encodeParam(str) {
+            return btoa(rot13(str));
         }
 
-        function decode(str) {
-            return atob(rot13(str));
+        function decodeParam(str) {
+            return rot13(atob(str));
         }
 
         function handleLogin(event) {
             event.preventDefault();
+            const user = document.getElementById('username').value.trim();
             const pwd = document.getElementById('password').value;
+            
+            const params = new URLSearchParams();
+            params.append('username', encodeParam(user));
+            params.append('password', encodeParam(pwd));
             
             fetch(`${API_BASE}/STATS`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: `pwd=${encode(pwd)}`
+                body: params.toString()
             })
             .then(response => {
                 if (response.ok) {
                     return response.text();
                 }
-                throw new Error('Invalid password');
+                throw new Error('Invalid credentials');
             })
             .then(() => {
+                username = user;
                 password = pwd;
+                sessionStorage.setItem('moustique_user', user);
                 sessionStorage.setItem('moustique_pwd', pwd);
                 showDashboard();
             })
             .catch(error => {
                 const errorEl = document.getElementById('login-error');
-                errorEl.textContent = 'Invalid password';
+                errorEl.textContent = 'Invalid username or password';
                 errorEl.style.display = 'block';
+                setTimeout(() => errorEl.style.display = 'none', 5000);
             });
             
             return false;
         }
 
         function logout() {
+            username = '';
             password = '';
+            sessionStorage.removeItem('moustique_user');
             sessionStorage.removeItem('moustique_pwd');
             clearInterval(statsInterval);
+            clearInterval(pickupInterval);
             document.getElementById('dashboard').style.display = 'none';
             document.getElementById('login-screen').style.display = 'flex';
         }
@@ -600,6 +605,7 @@
         function showDashboard() {
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('dashboard').style.display = 'block';
+            document.getElementById('current-user').textContent = username;
             loadStats();
             statsInterval = setInterval(loadStats, 5000);
         }
@@ -614,83 +620,15 @@
             if (tabName === 'log') loadLog();
             if (tabName === 'clients') loadClients();
             if (tabName === 'posters') loadPosters();
-        }
-
-        let logInterval;
-        async function loadLog() {
-            const container = document.getElementById('log-container');
-
-            // Clear any existing interval
-            if (logInterval) {
-                clearInterval(logInterval);
-            }
-
-            async function fetchLog() {
-                try {
-                    const response = await fetch(`${API_BASE}/LOG`, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                        body: `pwd=${encode(password)}`
-                    });
-
-                    if (!response.ok) {
-                        throw new Error('Failed to fetch log');
-                    }
-
-                    const encoded = await response.text();
-                    const decoded = decode(encoded);
-                    const data = JSON.parse(decoded);
-
-                    if (data.lines && data.lines.length > 0) {
-                        // Format log lines with syntax highlighting
-                        const formattedLines = data.lines
-                            .filter(line => line.trim())
-                            .map(line => {
-                                // Color different log levels
-                                if (line.includes('ERROR') || line.includes('CRITICAL')) {
-                                    return `<span style="color: #ff6b6b;">${escapeHtml(line)}</span>`;
-                                } else if (line.includes('WARN')) {
-                                    return `<span style="color: #ffa726;">${escapeHtml(line)}</span>`;
-                                } else if (line.includes('INFO')) {
-                                    return `<span style="color: #66bb6a;">${escapeHtml(line)}</span>`;
-                                } else if (line.includes('DEBUG')) {
-                                    return `<span style="color: #42a5f5;">${escapeHtml(line)}</span>`;
-                                } else {
-                                    return `<span style="color: #d4d4d4;">${escapeHtml(line)}</span>`;
-                                }
-                            })
-                            .join('<br>');
-
-                        container.innerHTML = formattedLines;
-                        // Auto-scroll to bottom
-                        container.scrollTop = container.scrollHeight;
-                    } else {
-                        container.innerHTML = '<div style="color: #888;">No log entries found. Check ./logs/moustique.log</div>';
-                    }
-                } catch (error) {
-                    console.error('Failed to load log:', error);
-                    container.innerHTML = '<div style="color: #ff6b6b;">Failed to load log. Make sure logging.file is configured in config.yaml</div>';
-                }
-            }
-
-            // Initial fetch
-            await fetchLog();
-
-            // Auto-refresh every 3 seconds
-            logInterval = setInterval(fetchLog, 3000);
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            if (tabName === 'subscribe') startPickup();
+            else stopPickup();
         }
 
         async function handlePublish(event) {
             event.preventDefault();
             const topic = document.getElementById('pub-topic').value;
             const message = document.getElementById('pub-message').value;
-            const from = document.getElementById('pub-from').value || 'web-admin';
+            const from = document.getElementById('pub-from').value || username;
             
             const errorEl = document.getElementById('publish-error');
             const successEl = document.getElementById('publish-success');
@@ -698,18 +636,24 @@
             successEl.style.display = 'none';
 
             try {
-                const formData = `topic=${encode(topic)}&message=${encode(message)}&from=${encode(from)}&updated_time=${encode(String(Math.floor(Date.now()/1000)))}&updated_nicedatetime=${encode(new Date().toISOString().slice(0,19).replace('T',' '))}`;
+                const params = new URLSearchParams();
+                params.append('username', encodeParam(username));
+                params.append('password', encodeParam(password));
+                params.append('topic', encodeParam(topic));
+                params.append('message', encodeParam(message));
+                params.append('from', encodeParam(from));
                 
                 const response = await fetch(`${API_BASE}/POST`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: formData
+                    body: params.toString()
                 });
 
                 if (response.ok) {
                     successEl.textContent = `Message published to ${topic}`;
                     successEl.style.display = 'block';
-                    document.getElementById('publish-form').reset();
+                    document.getElementById('pub-message').value = '';
+                    setTimeout(() => successEl.style.display = 'none', 3000);
                 } else {
                     throw new Error('Failed to publish');
                 }
@@ -721,37 +665,229 @@
             return false;
         }
 
-        async function loadStats() {
+        async function handleSubscribe(event) {
+            event.preventDefault();
+            const topic = document.getElementById('sub-topic').value;
+            const clientName = document.getElementById('sub-client').value;
+            
+            const errorEl = document.getElementById('subscribe-error');
+            const successEl = document.getElementById('subscribe-success');
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+
             try {
-                const response = await fetch(`${API_BASE}/STATS`, {
+                const params = new URLSearchParams();
+                params.append('username', encodeParam(username));
+                params.append('password', encodeParam(password));
+                params.append('topic', encodeParam(topic));
+                params.append('client', encodeParam(clientName));
+                
+                const response = await fetch(`${API_BASE}/SUBSCRIBE`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: `pwd=${encode(password)}`
+                    body: params.toString()
                 });
-                
-                const encoded = await response.text();
-                const decoded = decode(encoded);
-                const stats = JSON.parse(decoded);
 
-                document.getElementById('total-requests').textContent = stats.requests.total.toLocaleString();
-                document.getElementById('req-per-sec').textContent = stats.requests.per_second_last_minute.toFixed(2) + ' req/s';
-                document.getElementById('total-messages').textContent = stats.requests.processed.total.toLocaleString();
-                document.getElementById('msg-per-sec').textContent = stats.requests.processed.per_second_last_minute.toFixed(2) + ' msg/s';
-                document.getElementById('active-clients').textContent = stats.clients.subscribers.toLocaleString();
-                document.getElementById('active-posters').textContent = stats.clients.posters.toLocaleString() + ' posters';
-                document.getElementById('total-topics').textContent = stats.subscription_count.toLocaleString();
-                document.getElementById('goroutines').textContent = stats.goroutines + ' goroutines';
-            } catch (error) {
-                console.error('Failed to load stats:', error);
-                if (error.message.includes('401')) {
-                    logout();
+                if (response.ok) {
+                    subscribedTopics.add(topic);
+                    successEl.textContent = `Subscribed to ${topic}`;
+                    successEl.style.display = 'block';
+                    startPickup();
+                    setTimeout(() => successEl.style.display = 'none', 3000);
+                } else {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
+            } catch (error) {
+                console.error('Subscribe error:', error);
+                errorEl.textContent = 'Failed to subscribe: ' + error.message;
+                errorEl.style.display = 'block';
+            }
+
+            return false;
+        }
+
+        function startPickup() {
+            if (pickupInterval) return;
+            const clientName = document.getElementById('sub-client').value;
+            
+            pickupInterval = setInterval(async () => {
+                try {
+                    const params = new URLSearchParams();
+                    params.append('username', encodeParam(username));
+                    params.append('password', encodeParam(password));
+                    params.append('client', encodeParam(clientName));
+                    
+                    const response = await fetch(`${API_BASE}/PICKUP`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                        body: params.toString()
+                    });
+
+                    if (response.ok) {
+                        const encoded = await response.text();
+                        if (encoded) {
+                            const decoded = decodeParam(encoded);
+                            const messagesByTopic = JSON.parse(decoded);
+
+                            // Messages are returned as a map: {"/topic": [messages]}
+                            if (messagesByTopic && typeof messagesByTopic === 'object') {
+                                let hasMessages = false;
+                                for (const topic in messagesByTopic) {
+                                    const messages = messagesByTopic[topic];
+                                    if (Array.isArray(messages) && messages.length > 0) {
+                                        hasMessages = true;
+                                        messages.forEach(msg => {
+                                            receivedMessages.unshift({
+                                                topic: msg.topic || topic,
+                                                message: msg.message || '',
+                                                from: msg.from || '',
+                                                time: new Date().toLocaleString()
+                                            });
+                                        });
+                                    }
+                                }
+                                if (hasMessages) {
+                                    displayMessages();
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Pickup error:', error);
+                }
+            }, 1000);
+        }
+
+        function stopPickup() {
+            if (pickupInterval) {
+                clearInterval(pickupInterval);
+                pickupInterval = null;
             }
         }
 
-        function closeModal(event) {
-            if (!event || event.target.id === 'message-modal') {
-                document.getElementById('message-modal').classList.remove('active');
+        function displayMessages() {
+            const container = document.getElementById('messages-container');
+            const count = document.getElementById('message-count');
+            
+            count.textContent = `(${receivedMessages.length})`;
+            
+            if (receivedMessages.length === 0) {
+                container.innerHTML = '<div class="loading">No messages yet.</div>';
+                return;
+            }
+
+            container.innerHTML = receivedMessages.map(msg => `
+                <div class="message-item">
+                    <div class="message-topic">${escapeHtml(msg.topic)}</div>
+                    <div class="message-content">${escapeHtml(msg.message)}</div>
+                    <div class="message-from">From: ${escapeHtml(msg.from)} • ${msg.time}</div>
+                </div>
+            `).join('');
+        }
+
+        function clearMessages() {
+            receivedMessages = [];
+            displayMessages();
+        }
+
+        async function loadLog() {
+            const container = document.getElementById('log-container');
+            container.innerHTML = '<div class="loading" style="color: #999;">Loading log...</div>';
+
+            try {
+                const params = new URLSearchParams();
+                params.append('username', encodeParam(username));
+                params.append('password', encodeParam(password));
+                
+                const response = await fetch(`${API_BASE}/LOG`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: params.toString()
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch log');
+                }
+
+                const encoded = await response.text();
+                const decoded = decodeParam(encoded);
+                const data = JSON.parse(decoded);
+
+                if (data.lines && data.lines.length > 0) {
+                    const formattedLines = data.lines
+                        .filter(line => line.trim())
+                        .map(line => {
+                            if (line.includes('ERROR') || line.includes('CRITICAL')) {
+                                return `<span style="color: #ff6b6b;">${escapeHtml(line)}</span>`;
+                            } else if (line.includes('WARN')) {
+                                return `<span style="color: #ffa726;">${escapeHtml(line)}</span>`;
+                            } else if (line.includes('INFO')) {
+                                return `<span style="color: #66bb6a;">${escapeHtml(line)}</span>`;
+                            } else if (line.includes('DEBUG')) {
+                                return `<span style="color: #42a5f5;">${escapeHtml(line)}</span>`;
+                            } else {
+                                return `<span style="color: #d4d4d4;">${escapeHtml(line)}</span>`;
+                            }
+                        })
+                        .join('<br>');
+
+                    container.innerHTML = formattedLines;
+                    container.scrollTop = container.scrollHeight;
+                } else {
+                    container.innerHTML = '<div style="color: #888;">No log entries found.</div>';
+                }
+            } catch (error) {
+                console.error('Failed to load log:', error);
+                container.innerHTML = '<div style="color: #ff6b6b;">Failed to load log. Logging may not be configured.</div>';
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function loadStats() {
+            try {
+                const params = new URLSearchParams();
+                params.append('username', encodeParam(username));
+                params.append('password', encodeParam(password));
+                
+                const response = await fetch(`${API_BASE}/STATS`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: params.toString()
+                });
+                
+                const encoded = await response.text();
+                const decoded = decodeParam(encoded);
+                const stats = JSON.parse(decoded);
+
+                // Extract values from nested structure
+                const totalRequests = stats.requests?.total || 0;
+                const requestsPerSecond = (stats.requests?.per_second_last_minute || 0).toFixed(2);
+                const totalMessages = stats.requests?.processed?.total || 0;
+                const messagesPerSecond = (stats.requests?.processed?.per_second_last_minute || 0).toFixed(2);
+                const activeClients = stats.clients?.subscribers || 0;
+                const activePosters = stats.clients?.posters || 0;
+                const totalTopics = stats.subscription_count || 0;
+                const valuesCount = stats.values || 0;
+
+                document.getElementById('total-requests').textContent = totalRequests.toLocaleString();
+                document.getElementById('req-per-sec').textContent = requestsPerSecond + ' req/s';
+                document.getElementById('total-messages').textContent = totalMessages.toLocaleString();
+                document.getElementById('msg-per-sec').textContent = messagesPerSecond + ' msg/s';
+                document.getElementById('active-clients').textContent = activeClients.toLocaleString();
+                document.getElementById('active-posters').textContent = activePosters + ' posters';
+                document.getElementById('total-topics').textContent = totalTopics.toLocaleString();
+                document.getElementById('values-count').textContent = valuesCount + ' values';
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+                if (error.message && error.message.includes('401')) {
+                    logout();
+                }
             }
         }
 
@@ -760,27 +896,65 @@
             container.innerHTML = '<div class="loading">Loading clients...</div>';
 
             try {
+                const params = new URLSearchParams();
+                params.append('username', encodeParam(username));
+                params.append('password', encodeParam(password));
+                
                 const response = await fetch(`${API_BASE}/CLIENTS`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: `pwd=${encode(password)}`
+                    body: params.toString()
                 });
 
                 const encoded = await response.text();
-                const decoded = decode(encoded);
+                const decoded = decodeParam(encoded);
                 const clients = JSON.parse(decoded);
 
-                if (clients.length === 0) {
+                if (!clients || clients.length === 0) {
                     container.innerHTML = '<div class="loading">No clients found</div>';
                     return;
                 }
 
-                container.innerHTML = clients.sort().map(client => `
-                    <div class="list-item">
-                        <div class="item-title">${client}</div>
-                        <div class="item-meta">Active subscriber</div>
-                    </div>
-                `).join('');
+                // Sort by name
+                clients.sort((a, b) => {
+                    const nameA = typeof a === 'string' ? a : a.Name;
+                    const nameB = typeof b === 'string' ? b : b.Name;
+                    return nameA.localeCompare(nameB);
+                });
+
+                container.innerHTML = clients.map(client => {
+                    // Handle both old string format and new object format
+                    if (typeof client === 'string') {
+                        return `
+                            <div class="list-item">
+                                <div class="item-title">${escapeHtml(client)}</div>
+                                <div class="item-meta">Active subscriber</div>
+                            </div>
+                        `;
+                    } else {
+                        const metaParts = [];
+                        if (client.IP) {
+                            metaParts.push(`IP: ${escapeHtml(client.IP)}`);
+                        }
+                        if (client.FirstSeenNiceDatetime) {
+                            metaParts.push(`First seen: ${escapeHtml(client.FirstSeenNiceDatetime)}`);
+                        }
+                        if (client.LatestPickupNiceDatetime) {
+                            metaParts.push(`Latest pickup: ${escapeHtml(client.LatestPickupNiceDatetime)}`);
+                        }
+                        if (client.RequestCounter) {
+                            metaParts.push(`Requests: ${client.RequestCounter}`);
+                        }
+                        const metaText = metaParts.length > 0 ? metaParts.join(' • ') : 'Active subscriber';
+
+                        return `
+                            <div class="list-item">
+                                <div class="item-title">${escapeHtml(client.Name)}</div>
+                                <div class="item-meta">${metaText}</div>
+                            </div>
+                        `;
+                    }
+                }).join('');
             } catch (error) {
                 container.innerHTML = '<div class="error">Failed to load clients</div>';
             }
@@ -791,38 +965,82 @@
             container.innerHTML = '<div class="loading">Loading posters...</div>';
 
             try {
+                const params = new URLSearchParams();
+                params.append('username', encodeParam(username));
+                params.append('password', encodeParam(password));
+                
                 const response = await fetch(`${API_BASE}/POSTERS`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: `pwd=${encode(password)}`
+                    body: params.toString()
                 });
 
                 const encoded = await response.text();
-                const decoded = decode(encoded);
+                const decoded = decodeParam(encoded);
                 const posters = JSON.parse(decoded);
 
-                if (posters.length === 0) {
+                if (!posters || posters.length === 0) {
                     container.innerHTML = '<div class="loading">No posters found</div>';
                     return;
                 }
 
-                container.innerHTML = posters.sort().map(poster => `
-                    <div class="list-item">
-                        <div class="item-title">${poster}</div>
-                        <div class="item-meta">Message publisher</div>
-                    </div>
-                `).join('');
+                // Sort by name
+                posters.sort((a, b) => {
+                    const nameA = typeof a === 'string' ? a : a.Name;
+                    const nameB = typeof b === 'string' ? b : b.Name;
+                    return nameA.localeCompare(nameB);
+                });
+
+                container.innerHTML = posters.map(poster => {
+                    // Handle both old string format and new object format
+                    if (typeof poster === 'string') {
+                        return `
+                            <div class="list-item">
+                                <div class="item-title">${escapeHtml(poster)}</div>
+                                <div class="item-meta">Message publisher</div>
+                            </div>
+                        `;
+                    } else {
+                        const metaParts = [];
+                        if (poster.IP) {
+                            metaParts.push(`IP: ${escapeHtml(poster.IP)}`);
+                        }
+                        if (poster.FirstSeenNiceDatetime) {
+                            metaParts.push(`First seen: ${escapeHtml(poster.FirstSeenNiceDatetime)}`);
+                        }
+                        if (poster.LatestPostNiceDatetime) {
+                            metaParts.push(`Latest post: ${escapeHtml(poster.LatestPostNiceDatetime)}`);
+                        }
+                        if (poster.MessageCount) {
+                            metaParts.push(`Messages: ${poster.MessageCount}`);
+                        }
+                        const metaText = metaParts.length > 0 ? metaParts.join(' • ') : 'Message publisher';
+
+                        return `
+                            <div class="list-item">
+                                <div class="item-title">${escapeHtml(poster.Name)}</div>
+                                <div class="item-meta">${metaText}</div>
+                            </div>
+                        `;
+                    }
+                }).join('');
             } catch (error) {
                 container.innerHTML = '<div class="error">Failed to load posters</div>';
             }
         }
 
         window.onload = function() {
+            const savedUser = sessionStorage.getItem('moustique_user');
             const savedPwd = sessionStorage.getItem('moustique_pwd');
-            if (savedPwd) {
+            if (savedUser && savedPwd) {
+                document.getElementById('username').value = savedUser;
                 document.getElementById('password').value = savedPwd;
                 handleLogin({preventDefault: () => {}});
             }
+        };
+
+        window.onbeforeunload = function() {
+            stopPickup();
         };
     </script>
 </body>

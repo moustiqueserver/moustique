@@ -14,6 +14,8 @@ public class MoustiqueClient {
     private final HttpClient httpClient;
     private final String baseUrl;
     private final String clientName;
+    private final String username;
+    private final String password;
     private final Map<String, List<Consumer<Message>>> callbacks = new HashMap<>();
 
     public static class Message {
@@ -46,45 +48,61 @@ public class MoustiqueClient {
     }
 
     public MoustiqueClient(String ip, String port, String clientName) {
+        this(ip, port, clientName, null, null);
+    }
+
+    public MoustiqueClient(String ip, String port, String clientName, String username, String password) {
         this.httpClient = HttpClient.newHttpClient();
         this.baseUrl = "http://" + ip + ":" + port;
         this.clientName = clientName.isBlank()
                 ? "java-" + System.nanoTime()
                 : clientName.trim();
+        this.username = username;
+        this.password = password;
         System.out.println("Moustique Java client initialized: " + this.clientName);
     }
 
+    private Map<String, String> addAuth(Map<String, String> payload) {
+        if (username != null && password != null && !username.isBlank() && !password.isBlank()) {
+            Map<String, String> withAuth = new HashMap<>(payload);
+            withAuth.put("username", Utils.enc(username));
+            withAuth.put("password", Utils.enc(password));
+            return withAuth;
+        }
+        return payload;
+    }
+
     public CompletableFuture<Void> publish(String topic, String message) {
-        Map<String, String> payload = Map.of(
+        Map<String, String> payload = addAuth(Map.of(
                 "topic", Utils.enc(topic),
                 "message", Utils.enc(message),
                 "updated_time", Utils.enc(String.valueOf(Utils.epochSeconds())),
                 "updated_nicedatetime", Utils.enc(Utils.getNiceDateTime()),
                 "from", Utils.enc(clientName)
-        );
+        ));
 
         return sendPost("/POST", payload)
                 .thenAccept(res -> System.out.println("Published to " + topic));
     }
 
     public CompletableFuture<Void> putval(String topic, String value) {
-        Map<String, String> payload = Map.of(
+        Map<String, String> payload = addAuth(Map.of(
                 "valname", Utils.enc(topic),
                 "val", Utils.enc(value),
                 "updated_time", Utils.enc(String.valueOf(Utils.epochSeconds())),
                 "updated_nicedatetime", Utils.enc(Utils.getNiceDateTime()),
                 "from", Utils.enc(clientName)
-        );
+        ));
 
         return sendRequest("PUT", "/PUTVAL", payload)
                 .thenAccept(res -> System.out.println("Putval: " + topic + " = " + value));
     }
 
     public CompletableFuture<Void> subscribe(String topic, Consumer<Message> callback) {
-        Map<String, String> payload = Map.of(
+        Map<String, String> payload = addAuth(Map.of(
                 "topic", Utils.enc(topic),
                 "client", Utils.enc(clientName)
-        );
+        ));
 
         callbacks.computeIfAbsent(topic, k -> new ArrayList<>()).add(callback);
 
@@ -93,7 +111,7 @@ public class MoustiqueClient {
     }
 
     public CompletableFuture<Void> pickup() {
-        Map<String, String> payload = Map.of("client", Utils.enc(clientName));
+        Map<String, String> payload = addAuth(Map.of("client", Utils.enc(clientName)));
 
         return sendPost("/PICKUP", payload)
                 .thenAccept(response -> {
