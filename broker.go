@@ -511,6 +511,9 @@ func (b *Broker) getSystemMessages(clientName string) map[string][]*Message {
 
 // StartMaintenance starts background maintenance tasks
 func (b *Broker) StartMaintenance(ctx context.Context) {
+	if b.debug {
+		b.logger.Printf("StartMaintenance: Starting background maintenance tasks")
+	}
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -518,10 +521,16 @@ func (b *Broker) StartMaintenance(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			if b.debug {
+				b.logger.Printf("StartMaintenance: Context cancelled, stopping maintenance")
+			}
 			return
 		case <-ticker.C:
 			counter++
 			if counter%4 == 0 {
+				if b.debug {
+					b.logger.Printf("Running maintenance cycle %d", counter)
+				}
 				b.kickInactiveClients()
 				b.clearOldPosters()
 			}

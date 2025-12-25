@@ -469,6 +469,25 @@ make cli         # Build CLI only
 ./moustique -debug
 ```
 
+### Running Tests
+
+```bash
+# Run Go unit tests
+make test
+
+# Run client integration tests (requires running server)
+# First, start the server in another terminal:
+./moustique
+
+# Then run client tests:
+make test-clients
+
+# Or manually:
+./tests/test_all_clients.sh
+```
+
+See [tests/README.md](tests/README.md) for detailed testing documentation.
+
 ### Building for Multiple Platforms
 
 ```bash

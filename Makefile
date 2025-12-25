@@ -29,7 +29,8 @@ help:
 	@echo "  make install       - Install server and CLI to /usr/local/bin"
 	@echo "  make dist-all      - Build all binaries for all platforms"
 	@echo "  make clean         - Remove build artifacts"
-	@echo "  make test          - Run tests"
+	@echo "  make test          - Run Go unit tests"
+	@echo "  make test-clients  - Run client integration tests (requires running server)"
 	@echo ""
 	@echo "Platform-specific builds:"
 	@echo "  make server-linux  - Build server for Linux (amd64, arm64)"
@@ -62,10 +63,15 @@ clean:
 	rm -rf $(BUILD_DIR) $(DIST_DIR)
 	@echo "Clean complete!"
 
-# Run tests
+# Run Go unit tests
 test:
-	@echo "Running tests..."
+	@echo "Running Go unit tests..."
 	go test -v ./...
+
+# Run client integration tests
+test-clients:
+	@echo "Running client integration tests..."
+	@./tests/test_all_clients.sh
 
 # ============================================================================
 # Cross-compilation targets

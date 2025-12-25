@@ -18,7 +18,7 @@ def message_callback(topic: str, message: str, from_name: str):
 def main():
     if len(sys.argv) < 5:
         print("Usage: python test_client.py <ip> <port> <username> <password>")
-        print("Example: python test_client.py 192.168.1.79 33334 demo demo123")
+        print("Example: python test_client.py localhost 33334 demo demo123")
         sys.exit(1)
 
     server_ip = sys.argv[1]

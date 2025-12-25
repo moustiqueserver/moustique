@@ -27,6 +27,7 @@ type BrokerManager struct {
 	logger        *log.Logger
 	dataDir       string
 	defaultBroker *Broker
+	ctx           context.Context
 }
 
 // NewBrokerManager creates a new broker manager
@@ -35,39 +36,54 @@ func NewBrokerManager(logger *log.Logger, dataDir string, allowPublic bool) *Bro
 		brokers: make(map[string]*Broker),
 		logger:  logger,
 		dataDir: dataDir,
+		ctx:     nil, // Will be set when Start() is called
 	}
+
+	// Note: Default broker creation is deferred until InitializeDefault() is called with context
+	return bm
+}
+
+// InitializeDefault creates the default/public broker (called from Start with context)
+func (bm *BrokerManager) InitializeDefault(ctx context.Context, allowPublic bool) error {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
+	bm.ctx = ctx
 
 	// Create default/public broker if allowed
 	if allowPublic {
-		defaultDataDir := filepath.Join(dataDir, "public")
+		defaultDataDir := filepath.Join(bm.dataDir, "public")
 		if err := os.MkdirAll(defaultDataDir, 0755); err != nil {
-			logger.Printf("Warning: Could not create public data dir: %v", err)
+			bm.logger.Printf("Warning: Could not create public data dir: %v", err)
 		} else {
 			db, err := NewDatabase(filepath.Join(defaultDataDir, "moustique.db"))
 			if err != nil {
-				logger.Printf("Warning: Could not create public database: %v", err)
+				bm.logger.Printf("Warning: Could not create public database: %v", err)
 			} else {
 				if err := db.LoadAll(); err != nil {
-					logger.Printf("Warning: Could not load public database: %v", err)
+					bm.logger.Printf("Warning: Could not load public database: %v", err)
 				}
 
 				// Create user log file for public broker
 				userLogPath := filepath.Join(defaultDataDir, "user.log")
 				userLogFile, err := os.OpenFile(userLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 				if err != nil {
-					logger.Printf("Warning: Could not create public user log file: %v", err)
+					bm.logger.Printf("Warning: Could not create public user log file: %v", err)
 				}
 				userLogger := log.New(userLogFile, "[public] ", log.LstdFlags)
 
-				bm.defaultBroker = NewBroker(logger, db, false)
+				bm.defaultBroker = NewBroker(bm.logger, db, false)
 				bm.defaultBroker.SetUserLogger(userLogger, userLogPath)
 				bm.defaultBroker.LogUser("Public broker initialized")
-				logger.Println("Created public/default broker for unauthenticated access")
+
+				// Start maintenance for public broker
+				go bm.defaultBroker.StartMaintenance(ctx)
+				bm.logger.Println("Created public/default broker for unauthenticated access")
 			}
 		}
 	}
 
-	return bm
+	return nil
 }
 
 // GetOrCreateBroker gets or creates a broker for a specific user
@@ -77,6 +93,11 @@ func (bm *BrokerManager) GetOrCreateBroker(username string) (*Broker, error) {
 
 	if broker, exists := bm.brokers[username]; exists {
 		return broker, nil
+	}
+
+	// Ensure context is set
+	if bm.ctx == nil {
+		return nil, fmt.Errorf("broker manager context not initialized")
 	}
 
 	// Create user data directory
@@ -110,6 +131,9 @@ func (bm *BrokerManager) GetOrCreateBroker(username string) (*Broker, error) {
 	broker := NewBroker(bm.logger, db, false)
 	broker.SetUserLogger(userLogger, userLogPath)
 	bm.brokers[username] = broker
+
+	// Start maintenance for this user's broker
+	go broker.StartMaintenance(bm.ctx)
 
 	bm.logger.Printf("Created broker instance for user: %s", username)
 	broker.LogUser("Broker initialized")
@@ -327,6 +351,11 @@ func (s *Server) AddUser(username, password string) error {
 
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
+	// Initialize broker manager with context and create default broker if needed
+	if err := s.brokerManager.InitializeDefault(ctx, s.allowPublic); err != nil {
+		return fmt.Errorf("failed to initialize broker manager: %w", err)
+	}
+
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)

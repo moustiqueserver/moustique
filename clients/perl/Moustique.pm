@@ -39,8 +39,8 @@ sub new {
     $name = $name . "-" . $params{name} if(defined $params{name} && "" ne $params{name});
     $name = $name . "-" . int(rand(100)) . "-$pid";
     $self->{name} = $name;
-    $server_ip="". ($params{ip} ||"www.brefelt.net");
-    $server_url="http://" . ($params{ip} ||"www.brefelt.net");
+    $server_ip="". ($params{ip} ||"cloud.moustique.xyz");
+    $server_url="http://" . ($params{ip} ||"cloud.moustique.xyz");
     $server_port=$params{port} || "33334";
 
     # Authentication: use provided credentials, fall back to global, or use undef for public
@@ -200,7 +200,7 @@ sub resubscribe {
   #my $ua      = LWP::UserAgent->new(timeout=>5);
   my %callbacks=%{ $self->{callbacks} };
   my @subs = keys %callbacks;
-  publish_nothread("192.168.1.79", "33334", "/mushroom/logs/moustique_lib/DEBUG", "$self->{name} Resubscribing all subscriptions", $self->{name}, $self->{username}, $self->{password}) if scalar @subs > 0;
+  publish_nothread("localhost", "33334", "/mushroom/logs/moustique_lib/DEBUG", "$self->{name} Resubscribing all subscriptions", $self->{name}, $self->{username}, $self->{password}) if scalar @subs > 0;
   foreach my $topic (@subs) {
      print("Resubscribing $topic " . $self->{name} . "\n");
      my $form = $self->add_auth({
@@ -209,7 +209,7 @@ sub resubscribe {
      });
      my $response = $gua->post($server_url.":".$server_port ."/SUBSCRIBE" , $form );
   }
-  publish_nothread("192.168.1.79", "33334", "/mushroom/logs/moustique_lib/DEBUG", "$self->{name} Resubscribed all subscriptions", $self->{name}, $self->{username}, $self->{password});
+  publish_nothread("localhost", "33334", "/mushroom/logs/moustique_lib/DEBUG", "$self->{name} Resubscribed all subscriptions", $self->{name}, $self->{username}, $self->{password});
 }
 
 sub tick {
