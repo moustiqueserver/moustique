@@ -592,17 +592,12 @@ func (b *Broker) GetClients() []*Client {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	// Use messageQueue to find active clients (those with queues)
-	// and return their Client info if available
-	clients := make([]*Client, 0, len(b.messageQueue))
-	for clientName := range b.messageQueue {
-		if client, exists := b.clients[clientName]; exists {
+	// Return all clients that have message queues (active clients)
+	clients := make([]*Client, 0, len(b.clients))
+	for clientName, client := range b.clients {
+		// Only include clients that have a message queue (active)
+		if _, hasQueue := b.messageQueue[clientName]; hasQueue {
 			clients = append(clients, client)
-		} else {
-			// Fallback: create minimal client info if not in clients map
-			clients = append(clients, &Client{
-				Name: clientName,
-			})
 		}
 	}
 	return clients
