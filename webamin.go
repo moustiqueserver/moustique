@@ -14,12 +14,19 @@ var adminHTML string
 //go:embed static/superadmin.html
 var superadminHTML string
 
+//go:embed static/favicon.svg
+var faviconSVG string
+
 func (s *Server) ServeWebAdmin(conn net.Conn) {
 	s.sendHTML(conn, adminHTML)
 }
 
 func (s *Server) ServeSuperAdmin(conn net.Conn) {
 	s.sendHTML(conn, superadminHTML)
+}
+
+func (s *Server) ServeFavicon(conn net.Conn) {
+	s.sendSVG(conn, faviconSVG)
 }
 
 /*o:embed static/admin.html

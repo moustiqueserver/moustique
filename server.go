@@ -529,6 +529,9 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	case "superadmin":
 		s.ServeSuperAdmin(conn)
 		return
+	case "favicon.ico", "favicon.svg":
+		s.ServeFavicon(conn)
+		return
 	}
 
 	// Admin endpoints (require admin password, not user auth)
@@ -1027,6 +1030,14 @@ func (s *Server) sendHTML(conn net.Conn, html string) {
 	fmt.Fprintf(conn, "Content-Type: text/html\r\n")
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "%s", html)
+}
+
+func (s *Server) sendSVG(conn net.Conn, svg string) {
+	fmt.Fprintf(conn, "HTTP/1.0 200 OK\r\n")
+	fmt.Fprintf(conn, "Content-Type: image/svg+xml\r\n")
+	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(svg))
+	fmt.Fprintf(conn, "\r\n")
+	fmt.Fprintf(conn, "%s", svg)
 }
 
 func (s *Server) sendNotFound(conn net.Conn) {
