@@ -563,7 +563,7 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 			return
 		}
 		if s.debug {
-			s.logger.Printf("Using public broker for unauthenticated request")
+			s.logger.Printf("Using public broker for unauthenticated request from %s:%s", peerHost, params["from"])
 		}
 	} else {
 		// Credentials provided - validate and get user broker
