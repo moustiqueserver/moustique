@@ -511,6 +511,10 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	// Route to handler
 	path := strings.Trim(req.URL.Path, "/")
 
+	if s.debug {
+		s.logger.Printf("Request path: '%s' from %s", path, peerHost)
+	}
+
 	// Public endpoints (no auth required)
 	switch path {
 	case "":
@@ -624,8 +628,15 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	case "CROOKS":
 		s.handleCrooks(conn, params, broker)
 	default:
-		// Invalid/unknown endpoint - record as crook and ban
-		broker.RecordInvalidRequest(peerHost)
+		// Only ban if it's not a browser resource request (favicon, css, js, etc)
+		// Browser requests for resources should just get 404, not banned
+		if !strings.Contains(path, ".") && path != "favicon.ico" {
+			// Looks like an API endpoint that doesn't exist - record as crook and ban
+			if s.debug {
+				s.logger.Printf("Invalid API endpoint '%s' from %s - banning", path, peerHost)
+			}
+			broker.RecordInvalidRequest(peerHost)
+		}
 		s.sendNotFound(conn)
 	}
 
