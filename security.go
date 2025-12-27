@@ -9,20 +9,32 @@ import (
 // SecurityChecker handles IP-based access control
 type SecurityChecker struct {
 	allowedIPs    map[string]bool
+	allowedNets   []*net.IPNet
 	teliaRegex    *regexp.Regexp
 	localNetRegex *regexp.Regexp
 }
 
 // NewSecurityChecker creates a new security checker
 func NewSecurityChecker(allowedPeers []string) *SecurityChecker {
-	// Convert slice to map for fast lookups
 	allowedIPs := make(map[string]bool)
-	for _, ip := range allowedPeers {
-		allowedIPs[ip] = true
+	var allowedNets []*net.IPNet
+
+	for _, peer := range allowedPeers {
+		// Check if it's a CIDR notation
+		if strings.Contains(peer, "/") {
+			_, ipNet, err := net.ParseCIDR(peer)
+			if err == nil {
+				allowedNets = append(allowedNets, ipNet)
+			}
+		} else {
+			// Single IP address
+			allowedIPs[peer] = true
+		}
 	}
 
 	return &SecurityChecker{
 		allowedIPs:    allowedIPs,
+		allowedNets:   allowedNets,
 		teliaRegex:    regexp.MustCompile(`telia\.com$`),
 		localNetRegex: regexp.MustCompile(`^192\.168\.`),
 	}
@@ -47,6 +59,16 @@ func (sc *SecurityChecker) IsPeerAllowed(peerHost string) bool {
 	// Known allowed IPs
 	if sc.allowedIPs[peerHost] {
 		return true
+	}
+
+	// Check allowed CIDR ranges
+	parsedIP := net.ParseIP(peerHost)
+	if parsedIP != nil {
+		for _, ipNet := range sc.allowedNets {
+			if ipNet.Contains(parsedIP) {
+				return true
+			}
+		}
 	}
 
 	// Tailscale IP check (100.x.x.x range)

@@ -90,7 +90,10 @@ func GenerateDefaultConfig(path string) error {
 			File:  "",
 		},
 		Security: SecurityConfig{
-			AllowedPeers: []string{},
+			AllowedPeers: []string{
+				"172.16.0.0/12",
+				"192.168.0.0/16",
+			},
 			BlockedPeers: []string{},
 		},
 	}
