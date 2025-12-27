@@ -322,7 +322,7 @@ type Server struct {
 }
 
 // NewServer creates a new HTTP server
-func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool) (*Server, error) {
+func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, allowedPeers []string) (*Server, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
@@ -339,7 +339,7 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 		logger:        logger,
 		brokerManager: NewBrokerManager(logger, dataDir, allowPublic),
 		userAuth:      userAuth,
-		security:      NewSecurityChecker(),
+		security:      NewSecurityChecker(allowedPeers),
 		debug:         debug,
 		version:       Version,
 		allowPublic:   allowPublic,

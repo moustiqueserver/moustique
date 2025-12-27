@@ -14,20 +14,15 @@ type SecurityChecker struct {
 }
 
 // NewSecurityChecker creates a new security checker
-func NewSecurityChecker() *SecurityChecker {
+func NewSecurityChecker(allowedPeers []string) *SecurityChecker {
+	// Convert slice to map for fast lookups
+	allowedIPs := make(map[string]bool)
+	for _, ip := range allowedPeers {
+		allowedIPs[ip] = true
+	}
+
 	return &SecurityChecker{
-		allowedIPs: map[string]bool{
-			"195.67.22.146":  true,
-			"178.174.128.24": true,
-			"100.91.1.30":    true,
-			"100.127.172.70": true,
-			"100.106.122.48": true,
-			"100.76.232.85":  true,
-			"94.191.136.145": true,
-			"94.191.137.51":  true,
-			"94.191.137.181": true,
-			"79.136.65.91":   true,
-		},
+		allowedIPs:    allowedIPs,
 		teliaRegex:    regexp.MustCompile(`telia\.com$`),
 		localNetRegex: regexp.MustCompile(`^192\.168\.`),
 	}

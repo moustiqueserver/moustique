@@ -103,6 +103,7 @@ func main() {
 		*debug,
 		fileVersion,
 		allowPublic,
+		config.Security.AllowedPeers,
 	)
 	if err != nil {
 		logger.Fatalf("Failed to create server: %v", err)
