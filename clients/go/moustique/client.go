@@ -19,6 +19,7 @@ type Client struct {
 	ClientName string
 	Username   string
 	Password   string
+	UseHTTPS   bool
 
 	mu        sync.Mutex
 	callbacks map[string][]func(topic, message, from string)
@@ -31,12 +32,14 @@ type message struct {
 }
 
 // New creates a new Moustique client
-// Usage: New(ip, port, clientName, username, password)
+// Usage: New(ip, port, clientName, username, password, useHTTPS)
 // username and password are optional - omit them to use public broker
+// useHTTPS is optional - defaults to false (HTTP)
 func New(ip, port string, args ...string) *Client {
 	clientName := "go-client"
 	username := ""
 	password := ""
+	useHTTPS := false
 
 	if len(args) > 0 && args[0] != "" {
 		clientName = args[0]
@@ -47,15 +50,24 @@ func New(ip, port string, args ...string) *Client {
 	if len(args) > 2 {
 		password = args[2]
 	}
+	if len(args) > 3 && args[3] == "true" {
+		useHTTPS = true
+	}
 
 	clientName += "-" + uuid.New().String()[:8]
 
+	protocol := "http"
+	if useHTTPS {
+		protocol = "https"
+	}
+
 	return &Client{
-		BaseURL:    fmt.Sprintf("http://%s:%s", ip, port),
+		BaseURL:    fmt.Sprintf("%s://%s:%s", protocol, ip, port),
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 		ClientName: clientName,
 		Username:   username,
 		Password:   password,
+		UseHTTPS:   useHTTPS,
 		callbacks:  make(map[string][]func(topic, message, from string)),
 	}
 }

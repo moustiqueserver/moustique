@@ -1,0 +1,60 @@
+# Moustique Configuration Example - With TLS/HTTPS Enabled
+#
+# This example shows how to configure Moustique with TLS/HTTPS for secure communication.
+# Copy this file to config.yaml and adjust the settings for your environment.
+
+server:
+  # Port to listen on
+  # Same port is used for both HTTP and HTTPS - tls.enabled controls the protocol
+  # Use 443 for standard HTTPS (requires root), or 33334 for custom port
+  port: 33334
+
+  # Connection timeout
+  timeout: 30s
+
+  # Allow public/unauthenticated access (recommended: false for production)
+  allow_public: false
+
+  # TLS/HTTPS Configuration
+  tls:
+    # Enable TLS/HTTPS encryption
+    enabled: true
+
+    # Path to TLS certificate file
+    # For Let's Encrypt: /etc/letsencrypt/live/yourdomain.com/fullchain.pem
+    # For self-signed (dev): ./certs/server.crt
+    cert_file: /etc/letsencrypt/live/yourdomain.com/fullchain.pem
+
+    # Path to TLS private key file
+    # For Let's Encrypt: /etc/letsencrypt/live/yourdomain.com/privkey.pem
+    # For self-signed (dev): ./certs/server.key
+    key_file: /etc/letsencrypt/live/yourdomain.com/privkey.pem
+
+database:
+  # Directory where database files will be stored
+  path: ./data
+
+logging:
+  # Log level: debug, info, warn, error
+  level: info
+
+  # Optional: Log file path (leave empty to log to stdout)
+  file: ""
+
+security:
+  # List of IP addresses allowed to connect (empty = allow all authenticated users)
+  allowed_peers: []
+
+  # List of IP addresses blocked from connecting
+  blocked_peers: []
+
+# To generate a self-signed certificate for development/testing:
+#   ./scripts/generate-self-signed-cert.sh
+#
+# For production with Let's Encrypt:
+#   sudo certbot certonly --standalone -d yourdomain.com
+#
+# Then restart Moustique:
+#   systemctl restart moustique
+#
+# See TLS_SETUP.md for detailed instructions.

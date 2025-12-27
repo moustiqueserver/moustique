@@ -21,6 +21,14 @@ type ServerConfig struct {
 	Port        int           `yaml:"port"`
 	Timeout     time.Duration `yaml:"timeout"`
 	AllowPublic *bool         `yaml:"allow_public"` // Pointer to detect if set
+	TLS         TLSConfig     `yaml:"tls"`
+}
+
+// TLSConfig represents TLS/HTTPS configuration
+type TLSConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
 }
 
 // DatabaseConfig represents database configuration
@@ -81,6 +89,11 @@ func GenerateDefaultConfig(path string) error {
 			Port:        33334,
 			Timeout:     30 * time.Second,
 			AllowPublic: &defaultAllowPublic,
+			TLS: TLSConfig{
+				Enabled:  false,
+				CertFile: "/path/to/cert.pem",
+				KeyFile:  "/path/to/key.pem",
+			},
 		},
 		Database: DatabaseConfig{
 			Path: "./data",

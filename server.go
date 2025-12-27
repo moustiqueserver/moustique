@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -319,10 +320,27 @@ type Server struct {
 	debug         bool
 	version       string
 	allowPublic   bool
+	tlsEnabled    bool
+	tlsCertFile   string
+	tlsKeyFile    string
 }
 
 // NewServer creates a new HTTP server
-func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool) (*Server, error) {
+func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, tlsEnabled bool, tlsCertFile, tlsKeyFile string) (*Server, error) {
+	// Validate TLS configuration if enabled
+	if tlsEnabled {
+		if tlsCertFile == "" || tlsKeyFile == "" {
+			return nil, fmt.Errorf("TLS enabled but cert_file or key_file not specified")
+		}
+		// Check if certificate files exist
+		if _, err := os.Stat(tlsCertFile); os.IsNotExist(err) {
+			return nil, fmt.Errorf("TLS certificate file not found: %s", tlsCertFile)
+		}
+		if _, err := os.Stat(tlsKeyFile); os.IsNotExist(err) {
+			return nil, fmt.Errorf("TLS key file not found: %s", tlsKeyFile)
+		}
+	}
+
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
@@ -343,6 +361,9 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 		debug:         debug,
 		version:       Version,
 		allowPublic:   allowPublic,
+		tlsEnabled:    tlsEnabled,
+		tlsCertFile:   tlsCertFile,
+		tlsKeyFile:    tlsKeyFile,
 	}, nil
 }
 
@@ -362,13 +383,45 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize broker manager: %w", err)
 	}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
-	if err != nil {
-		return fmt.Errorf("failed to listen: %w", err)
+	var listener net.Listener
+	var err error
+
+	// Create listener with or without TLS
+	if s.tlsEnabled {
+		// Load TLS certificate and key
+		cert, err := tls.LoadX509KeyPair(s.tlsCertFile, s.tlsKeyFile)
+		if err != nil {
+			return fmt.Errorf("failed to load TLS certificate: %w", err)
+		}
+
+		// Configure TLS
+		tlsConfig := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12, // Require TLS 1.2 or higher
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			},
+		}
+
+		// Create TLS listener
+		listener, err = tls.Listen("tcp", fmt.Sprintf(":%d", s.port), tlsConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create TLS listener: %w", err)
+		}
+		s.logger.Printf("Starting Moustique Multi-Tenant Server on port %d with TLS/HTTPS", s.port)
+	} else {
+		// Create regular TCP listener
+		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", s.port))
+		if err != nil {
+			return fmt.Errorf("failed to listen: %w", err)
+		}
+		s.logger.Printf("Starting Moustique Multi-Tenant Server on port %d (HTTP, no TLS)", s.port)
 	}
 	defer listener.Close()
 
-	s.logger.Printf("Starting Moustique Multi-Tenant Server on port %d", s.port)
 	if s.allowPublic {
 		s.logger.Printf("Public/unauthenticated access is ENABLED")
 	}
@@ -974,6 +1027,12 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 		users = append(users, userInfo)
 	}
 
+	// Calculate actual per-second rates for the last minute
+	// We need to track the timestamp to calculate accurate rate
+	// For now, assume the counts are from approximately the last 60 seconds
+	requestsPerSecond := float64(totalRequestsLastMinute) / 60.0
+	messagesPerSecond := float64(totalMessagesLastMinute) / 60.0
+
 	response := map[string]interface{}{
 		"users":               users,
 		"total":               len(users),
@@ -981,6 +1040,8 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 		"total_messages":      totalMessages,
 		"requests_per_minute": totalRequestsLastMinute,
 		"messages_per_minute": totalMessagesLastMinute,
+		"requests_per_second": requestsPerSecond,
+		"messages_per_second": messagesPerSecond,
 		"active_brokers":      activeBrokers,
 	}
 

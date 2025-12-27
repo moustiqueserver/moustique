@@ -39,9 +39,15 @@ sub new {
     $name = $name . "-" . $params{name} if(defined $params{name} && "" ne $params{name});
     $name = $name . "-" . int(rand(100)) . "-$pid";
     $self->{name} = $name;
+
+    # HTTPS support
+    my $use_https = $params{use_https} || 0;
+    my $protocol = $use_https ? "https" : "http";
+
     $server_ip="". ($params{ip} ||"cloud.moustique.xyz");
-    $server_url="http://" . ($params{ip} ||"cloud.moustique.xyz");
+    $server_url="$protocol://" . ($params{ip} ||"cloud.moustique.xyz");
     $server_port=$params{port} || "33334";
+    $self->{use_https} = $use_https;
 
     # Authentication: use provided credentials, fall back to global, or use undef for public
     $self->{username} = $params{username} // $GLOBAL_USERNAME;
@@ -84,7 +90,8 @@ sub publish {
   my $retries = 0;
   my $mua      = $self->{ua};
   my ( $package, $filename, $line, $subroutine ) = caller(1);
-  my $post_url=$self->{server_ip} . ":" . $self->{server_port} . "/POST";
+  my $protocol = $self->{use_https} ? "https" : "http";
+  my $post_url= $protocol . "://" . $self->{server_ip} . ":" . $self->{server_port} . "/POST";
 
   my $form = $self->add_auth({
     topic => enc($topic),
@@ -94,9 +101,9 @@ sub publish {
     from => enc($from)
   });
 
-  my $response = $mua->post( "http://" . $post_url, $form);
+  my $response = $mua->post( $post_url, $form);
   while(!$response->is_success && $retries < $POST_RETRIES) {
-    $response = $mua->post( "http://" . $post_url, $form);
+    $response = $mua->post( $post_url, $form);
     $retries+=1;
   }
   unless($response->is_success) {

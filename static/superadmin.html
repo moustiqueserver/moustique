@@ -576,13 +576,9 @@
 
                 const totalRequests = data.total_requests || 0;
                 const totalMessages = data.total_messages || 0;
-                const requestsPerMinute = data.requests_per_minute || 0;
-                const messagesPerMinute = data.messages_per_minute || 0;
+                const requestsPerSecond = (data.requests_per_second || 0).toFixed(2);
+                const messagesPerSecond = (data.messages_per_second || 0).toFixed(2);
                 const activeBrokers = data.active_brokers || 0;
-
-                // Convert per-minute to per-second (based on last minute activity)
-                const requestsPerSecond = (requestsPerMinute / 60).toFixed(2);
-                const messagesPerSecond = (messagesPerMinute / 60).toFixed(2);
 
                 document.getElementById('total-requests').textContent = totalRequests.toLocaleString();
                 document.getElementById('total-messages').textContent = totalMessages.toLocaleString();

@@ -103,6 +103,9 @@ func main() {
 		*debug,
 		fileVersion,
 		allowPublic,
+		config.Server.TLS.Enabled,
+		config.Server.TLS.CertFile,
+		config.Server.TLS.KeyFile,
 	)
 	if err != nil {
 		logger.Fatalf("Failed to create server: %v", err)

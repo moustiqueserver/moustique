@@ -1,10 +1,12 @@
 // clients/javascript/moustique/index.js
 
 class Moustique {
-    constructor({ ip = '127.0.0.1', port = '33335', clientName = '', username = null, password = null } = {}) {
+    constructor({ ip = '127.0.0.1', port = '33335', clientName = '', username = null, password = null, useHttps = false } = {}) {
         this.ip = ip;
         this.port = port;
-        this.baseUrl = `http://${ip}:${port}`;
+        this.useHttps = useHttps;
+        const protocol = useHttps ? 'https' : 'http';
+        this.baseUrl = `${protocol}://${ip}:${port}`;
         this.clientName = clientName || `${this._getHostname()}-${Math.floor(Math.random() * 100)}-${Date.now()}`;
         this.username = username;
         this.password = password;

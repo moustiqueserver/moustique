@@ -37,12 +37,12 @@ def decode_rot13_base64(encoded: str) -> str:
         return encoded
 
 class Moustique:
-    def __init__(self, ip: str, port: str, client_name: str, 
-                 username: Optional[str] = None, password: Optional[str] = None, 
-                 timeout: int = 5):
+    def __init__(self, ip: str, port: str, client_name: str,
+                 username: Optional[str] = None, password: Optional[str] = None,
+                 timeout: int = 5, use_https: bool = False, verify_ssl: bool = True):
         """
         Initialize Moustique client
-        
+
         Args:
             ip: Server IP address
             port: Server port
@@ -50,6 +50,8 @@ class Moustique:
             username: Username for authentication (optional if public access enabled)
             password: Password for authentication (optional if public access enabled)
             timeout: Request timeout in seconds
+            use_https: Use HTTPS instead of HTTP (default: False)
+            verify_ssl: Verify SSL certificates when using HTTPS (default: True)
         """
         self.ip = ip
         self.port = port
@@ -57,7 +59,11 @@ class Moustique:
         self.username = username
         self.password = password
         self.timeout = timeout
-        self.base_url = f"http://{ip}:{port}"
+        self.use_https = use_https
+        self.verify_ssl = verify_ssl
+
+        protocol = "https" if use_https else "http"
+        self.base_url = f"{protocol}://{ip}:{port}"
         self.callbacks = {}
         self.session = requests.Session()  # Reuse connections
         
@@ -77,7 +83,8 @@ class Moustique:
             response = self.session.post(
                 f"{self.base_url}/{endpoint}",
                 data=encoded_params,
-                timeout=self.timeout
+                timeout=self.timeout,
+                verify=self.verify_ssl
             )
             
             if response.status_code == 401:
