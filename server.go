@@ -974,6 +974,10 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 		users = append(users, userInfo)
 	}
 
+	// Calculate actual per-second rates for the last minute
+	requestsPerSecond := float64(totalRequestsLastMinute) / 60.0
+	messagesPerSecond := float64(totalMessagesLastMinute) / 60.0
+
 	response := map[string]interface{}{
 		"users":               users,
 		"total":               len(users),
@@ -981,6 +985,8 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 		"total_messages":      totalMessages,
 		"requests_per_minute": totalRequestsLastMinute,
 		"messages_per_minute": totalMessagesLastMinute,
+		"requests_per_second": requestsPerSecond,
+		"messages_per_second": messagesPerSecond,
 		"active_brokers":      activeBrokers,
 	}
 

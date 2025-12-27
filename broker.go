@@ -445,6 +445,24 @@ func (b *Broker) GetStats() map[string]interface{} {
 		valuesCount = b.db.CountValues()
 	}
 
+	// Calculate per-second rates for last minute with safety checks to avoid division by zero
+	requestsElapsed := now - b.minuteRequestCountTimestamp
+	if requestsElapsed == 0 {
+		requestsElapsed = 1
+	}
+	messagesElapsed := now - b.minuteMessageCountTimestamp
+	if messagesElapsed == 0 {
+		messagesElapsed = 1
+	}
+	pickupsElapsed := now - b.minutePickupCountTimestamp
+	if pickupsElapsed == 0 {
+		pickupsElapsed = 1
+	}
+	getvalsElapsed := now - b.minuteGetvalCountTimestamp
+	if getvalsElapsed == 0 {
+		getvalsElapsed = 1
+	}
+
 	return map[string]interface{}{
 		"started":              formatNiceDateTime(b.startedTime),
 		"memory_usage":         "N/A",
@@ -458,21 +476,21 @@ func (b *Broker) GetStats() map[string]interface{} {
 		},
 		"requests": map[string]interface{}{
 			"per_second":             float64(b.requestCount) / float64(secsRunning),
-			"per_second_last_minute": float64(b.minuteRequestCount) / float64(time.Now().Unix()-b.minuteRequestCountTimestamp),
+			"per_second_last_minute": float64(b.minuteRequestCount) / float64(requestsElapsed),
 			"total":                  b.requestCount,
 			"pickups": map[string]interface{}{
 				"per_second":             float64(b.pickupCount) / float64(secsRunning),
-				"per_second_last_minute": float64(b.minutePickupCount) / float64(time.Now().Unix()-b.minutePickupCountTimestamp),
+				"per_second_last_minute": float64(b.minutePickupCount) / float64(pickupsElapsed),
 				"total":                  b.pickupCount,
 			},
 			"processed": map[string]interface{}{
 				"per_second":             float64(b.messageCount) / float64(secsRunning),
-				"per_second_last_minute": float64(b.minuteMessageCount) / float64(time.Now().Unix()-b.minuteMessageCountTimestamp),
+				"per_second_last_minute": float64(b.minuteMessageCount) / float64(messagesElapsed),
 				"total":                  b.messageCount,
 			},
 			"getvals": map[string]interface{}{
 				"per_second":             float64(b.getvalCount) / float64(secsRunning),
-				"per_second_last_minute": float64(b.minuteGetvalCount) / float64(time.Now().Unix()-b.minuteGetvalCountTimestamp),
+				"per_second_last_minute": float64(b.minuteGetvalCount) / float64(getvalsElapsed),
 				"total":                  b.getvalCount,
 			},
 		},
