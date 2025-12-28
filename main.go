@@ -76,11 +76,9 @@ func main() {
 				fmt.Printf("DEBUG: Failed to open log file: %v\n", err)
 			} else {
 				// Get file descriptor info
-				if f, ok := file.(*os.File); ok {
-					fmt.Printf("DEBUG: File descriptor: %v\n", f.Fd())
-					stat, _ := f.Stat()
-					fmt.Printf("DEBUG: File stat name: %s, size: %d\n", stat.Name(), stat.Size())
-				}
+				fmt.Printf("DEBUG: File descriptor: %v\n", file.Fd())
+				stat, _ := file.Stat()
+				fmt.Printf("DEBUG: File stat name: %s, size: %d\n", stat.Name(), stat.Size())
 
 				// Test write directly to the file to verify it works
 				testMsg := fmt.Sprintf("[%s] TEST: Direct file write before logger creation\n", time.Now().Format("2006/01/02 15:04:05"))
@@ -92,12 +90,10 @@ func main() {
 				}
 
 				// Force sync to disk
-				if f, ok := file.(*os.File); ok {
-					if err := f.Sync(); err != nil {
-						fmt.Printf("DEBUG: Sync failed: %v\n", err)
-					} else {
-						fmt.Printf("DEBUG: Sync succeeded\n")
-					}
+				if err := file.Sync(); err != nil {
+					fmt.Printf("DEBUG: Sync failed: %v\n", err)
+				} else {
+					fmt.Printf("DEBUG: Sync succeeded\n")
 				}
 
 				logOutput = file
