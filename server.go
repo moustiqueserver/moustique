@@ -345,17 +345,23 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 	}
 
 	// Create access logger
+	logger.Printf("Attempting to create access logger in: %s", logDir)
 	accessLogger, err := NewRotatingLogger(logDir, "moustique_access.log")
 	if err != nil {
 		logger.Printf("Warning: Failed to create access logger: %v", err)
 		accessLogger = nil // Continue without access logging
+	} else {
+		logger.Printf("Access logger created successfully")
 	}
 
 	// Create error logger
+	logger.Printf("Attempting to create error logger in: %s", logDir)
 	errorLogger, errLog := NewRotatingLogger(logDir, "moustique_error.log")
 	if errLog != nil {
 		logger.Printf("Warning: Failed to create error logger: %v", errLog)
 		errorLogger = nil // Continue without error logging
+	} else {
+		logger.Printf("Error logger created successfully")
 	}
 
 	return &Server{
