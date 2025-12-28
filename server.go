@@ -645,7 +645,7 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	var broker *Broker
 	var err error
 
-	username = params["username"]  // Set in outer scope for access logging
+	username = params["username"] // Set in outer scope for access logging
 	password := params["password"]
 
 	if username == "" || password == "" {
@@ -789,20 +789,20 @@ func (s *Server) handlePickup(conn net.Conn, params map[string]string, peerHost 
 func (s *Server) validateInput(topic, message string) error {
 	// Validate topic length
 	if len(topic) > s.maxTopicLength {
-		return fmt.Errorf("topic name too long (max %d characters)", s.maxTopicLength)
+		return fmt.Errorf("topic name %s too long (max %d characters)", topic, s.maxTopicLength)
 	}
 
 	// Validate topic characters (alphanumeric, underscore, hyphen, dot, slash)
 	for _, c := range topic {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-			 (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/') {
-			return fmt.Errorf("topic contains invalid characters")
+			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/') {
+			return fmt.Errorf("topic %s contains invalid characters", topic)
 		}
 	}
 
 	// Validate message size
 	if int64(len(message)) > s.maxMessageSize {
-		return fmt.Errorf("message too large (max %d bytes)", s.maxMessageSize)
+		return fmt.Errorf("message on topic %s too large (max %d bytes)", topic, s.maxMessageSize)
 	}
 
 	return nil
@@ -812,14 +812,14 @@ func (s *Server) validateInput(topic, message string) error {
 func (s *Server) validateSubscribeTopic(topic string) error {
 	// Validate topic length
 	if len(topic) > s.maxTopicLength {
-		return fmt.Errorf("topic name too long (max %d characters)", s.maxTopicLength)
+		return fmt.Errorf("topic name %s too long (max %d characters)", topic, s.maxTopicLength)
 	}
 
 	// Validate topic characters (allow +, *, and # for wildcards)
 	for _, c := range topic {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-			 (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/' || c == '+' || c == '*' || c == '#') {
-			return fmt.Errorf("topic contains invalid characters")
+			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/' || c == '+' || c == '*' || c == '#') {
+			return fmt.Errorf("topic %s contains invalid characters", topic)
 		}
 	}
 
@@ -1276,10 +1276,10 @@ func (s *Server) handleAdminSetRateLimit(conn net.Conn, params map[string]string
 	}
 
 	s.sendJSON(conn, map[string]interface{}{
-		"status":  "success",
-		"message": msg,
+		"status":   "success",
+		"message":  msg,
 		"username": username,
-		"limit": limit,
+		"limit":    limit,
 	})
 }
 
@@ -1295,9 +1295,9 @@ func (s *Server) handleAdminGetRateLimit(conn net.Conn, params map[string]string
 	count := s.rateLimiter.GetUserRequestCount(username)
 
 	s.sendJSON(conn, map[string]interface{}{
-		"status":   "success",
-		"username": username,
-		"limit":    limit,
+		"status":        "success",
+		"username":      username,
+		"limit":         limit,
 		"current_count": count,
 	})
 }
