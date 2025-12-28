@@ -60,16 +60,21 @@ func main() {
 	var logOutput io.Writer = os.Stderr
 
 	if config.Logging.Directory != "" {
+		fmt.Printf("DEBUG: Attempting to setup logging in directory: %s\n", config.Logging.Directory)
 		// Ensure log directory exists
 		if err := os.MkdirAll(config.Logging.Directory, 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "Could not create log directory %s: %v\n", config.Logging.Directory, err)
+			fmt.Printf("DEBUG: Failed to create log directory: %v\n", err)
 		} else {
 			logPath := filepath.Join(config.Logging.Directory, "moustique.log")
+			fmt.Printf("DEBUG: Attempting to open log file: %s\n", logPath)
 			file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Could not open log file %s: %v\n", logPath, err)
+				fmt.Printf("DEBUG: Failed to open log file: %v\n", err)
 			} else {
 				logOutput = file
+				fmt.Printf("DEBUG: Successfully opened log file: %s\n", logPath)
 			}
 		}
 	} else if *debug {
@@ -77,6 +82,7 @@ func main() {
 	}
 
 	logger := log.New(logOutput, "[moustique] ", log.LstdFlags)
+	fmt.Printf("DEBUG: Logger created, logOutput type: %T\n", logOutput)
 
 	fileVersion, err := GetFileVersion()
 	if err != nil {
