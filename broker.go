@@ -70,6 +70,8 @@ type Broker struct {
 	userLogPath                 string
 	db                          *Database
 	debug                       bool
+	fail2banJail                string
+	fail2banLevel               string
 	messageQueue                map[string]map[string][]*Message
 	systemMessageQueue          map[string][]*Message
 	subscriptions               map[string][]string
@@ -97,7 +99,7 @@ type Broker struct {
 }
 
 // NewBroker creates a new message broker
-func NewBroker(logger *log.Logger, db *Database, debug bool) *Broker {
+func NewBroker(logger *log.Logger, db *Database, debug bool, fail2banJail string, fail2banLevel string) *Broker {
 	fmt.Printf("Creating new Broker instance\n")
 	return &Broker{
 		logger:              logger,
@@ -105,6 +107,8 @@ func NewBroker(logger *log.Logger, db *Database, debug bool) *Broker {
 		userLogPath:         "",
 		db:                  db,
 		debug:               debug,
+		fail2banJail:        fail2banJail,
+		fail2banLevel:       fail2banLevel,
 		messageQueue:        make(map[string]map[string][]*Message),
 		systemMessageQueue:  make(map[string][]*Message),
 		subscriptions:       make(map[string][]string),
@@ -702,8 +706,34 @@ func (b *Broker) GetTopics() []string {
 	return b.db.GetKeys()
 }
 
+// shouldBanForReason determines if an IP should be banned based on fail2ban level and reason
+func (b *Broker) shouldBanForReason(reason string) bool {
+	if b.fail2banJail == "" {
+		return false // fail2ban disabled
+	}
+
+	switch b.fail2banLevel {
+	case "minimal":
+		// Only ban endpoint scanning
+		return reason == "invalid_endpoint"
+	case "relaxed":
+		// Ban endpoint scanning and authentication failures
+		return reason == "invalid_endpoint" || reason == "invalid_credentials"
+	case "normal":
+		// Ban endpoint scanning, auth failures, and validation errors
+		return reason == "invalid_endpoint" || reason == "invalid_credentials" || reason == "validation_error"
+	case "strict":
+		// Ban everything including oversized requests and rate limits
+		return true
+	default:
+		// Default to normal
+		return reason == "invalid_endpoint" || reason == "invalid_credentials" || reason == "validation_error"
+	}
+}
+
 // RecordInvalidRequest records an invalid request from an IP and bans if needed
-func (b *Broker) RecordInvalidRequest(ip string) {
+// reason can be: invalid_endpoint, invalid_credentials, validation_error, oversized_request, rate_limit_exceeded
+func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -731,12 +761,12 @@ func (b *Broker) RecordInvalidRequest(ip string) {
 		b.mu.Unlock()
 		b.PublishSystemMessage(
 			"/server/notification/unauthorized_connection",
-			fmt.Sprintf("Unauthorized connection attempt from %s", ip),
+			fmt.Sprintf("Unauthorized connection attempt from %s (reason: %s)", ip, reason),
 		)
 		b.mu.Lock()
 
 		if b.debug {
-			b.logger.Printf("Recording invalid request from new IP: %s", ip)
+			b.logger.Printf("Recording invalid request from new IP: %s (reason: %s)", ip, reason)
 		}
 	} else {
 		// Repeat offender
@@ -745,22 +775,22 @@ func (b *Broker) RecordInvalidRequest(ip string) {
 		crook.LastSeenNiceDatetime = formatNiceDateTime(now)
 	}
 
-	// Ban the IP using fail2ban
-	if !crook.IsBanned {
+	// Check if we should ban based on fail2ban level and reason
+	if !crook.IsBanned && b.shouldBanForReason(reason) {
 		crook.IsBanned = true
 		crook.BannedAt = now
 		crook.BannedAtNiceDatetime = formatNiceDateTime(now)
 
-		b.logger.Printf("Banning IP %s after %d invalid attempts", ip, crook.Attempts)
-		b.LogUser("Banned IP: %s (attempts: %d)", ip, crook.Attempts)
+		b.logger.Printf("Banning IP %s after %d invalid attempts (reason: %s, level: %s)", ip, crook.Attempts, reason, b.fail2banLevel)
+		b.LogUser("Banned IP: %s (attempts: %d, reason: %s)", ip, crook.Attempts, reason)
 
 		// Execute fail2ban command in background
-		go func() {
-			cmd := exec.Command("sudo", "fail2ban-client", "set", "moustique", "banip", ip)
+		go func(jail string) {
+			cmd := exec.Command("sudo", "fail2ban-client", "set", jail, "banip", ip)
 			if err := cmd.Run(); err != nil {
-				b.logger.Printf("Warning: Failed to ban IP %s via fail2ban: %v", ip, err)
+				b.logger.Printf("Warning: Failed to ban IP %s via fail2ban jail %s: %v", ip, jail, err)
 			}
-		}()
+		}(b.fail2banJail)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -58,12 +59,18 @@ func main() {
 	// Setup logger
 	var logOutput io.Writer = os.Stderr
 
-	if config.Logging.File != "" {
-		file, err := os.OpenFile(config.Logging.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Could not open log file %s: %v\n", config.Logging.File, err)
+	if config.Logging.Directory != "" {
+		// Ensure log directory exists
+		if err := os.MkdirAll(config.Logging.Directory, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Could not create log directory %s: %v\n", config.Logging.Directory, err)
 		} else {
-			logOutput = file
+			logPath := filepath.Join(config.Logging.Directory, "moustique.log")
+			file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Could not open log file %s: %v\n", logPath, err)
+			} else {
+				logOutput = file
+			}
 		}
 	} else if *debug {
 		logOutput = os.Stdout
@@ -104,6 +111,13 @@ func main() {
 		fileVersion,
 		allowPublic,
 		config.Security.AllowedPeers,
+		config.Server.MaxRequestSize,
+		config.Security.MaxTopicLength,
+		config.Security.MaxMessageSize,
+		config.Security.DefaultRateLimit,
+		config.Security.Fail2banJail,
+		config.Security.Fail2banLevel,
+		config.Logging.Directory,
 	)
 	if err != nil {
 		logger.Fatalf("Failed to create server: %v", err)

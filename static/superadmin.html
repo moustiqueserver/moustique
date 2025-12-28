@@ -476,16 +476,68 @@
             return false;
         }
 
-        async function deleteUser(username) {
-            if (!confirm(`Are you sure you want to delete user "${username}"?\n\nThis will remove the user account but preserve their data.`)) {
+        async function editRateLimit(username, currentLimit) {
+            const newLimit = prompt(
+                `Set rate limit for user "${username}"\n\n` +
+                `Current limit: ${currentLimit === 0 ? 'unlimited' : currentLimit + ' requests/minute'}\n\n` +
+                `Enter new limit (0 = unlimited):`,
+                currentLimit
+            );
+
+            if (newLimit === null) return; // User cancelled
+
+            const limit = parseInt(newLimit);
+            if (isNaN(limit) || limit < 0) {
+                showMessage('Invalid limit. Please enter a number >= 0', true);
                 return;
             }
-            
+
             try {
                 const params = new URLSearchParams();
                 params.append('admin_password', encodeParam('admin123'));
                 params.append('username', encodeParam(username));
-                
+                params.append('limit', encodeParam(limit.toString()));
+
+                const response = await fetch(`${API_BASE}/ADMIN/SET_RATE_LIMIT`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: params.toString()
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        throw new Error('Invalid admin password');
+                    }
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const encoded = await response.text();
+                const decoded = decodeParam(encoded);
+                const result = JSON.parse(decoded);
+
+                if (result.status === 'success') {
+                    const limitText = limit === 0 ? 'unlimited' : limit + ' req/min';
+                    showMessage(`Rate limit for "${username}" set to ${limitText}`);
+                    loadUsers();
+                } else {
+                    throw new Error(result.message || 'Unknown error');
+                }
+            } catch (error) {
+                console.error('Set rate limit error:', error);
+                showMessage('Failed to set rate limit: ' + error.message, true);
+            }
+        }
+
+        async function deleteUser(username) {
+            if (!confirm(`Are you sure you want to delete user "${username}"?\n\nThis will remove the user account but preserve their data.`)) {
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams();
+                params.append('admin_password', encodeParam('admin123'));
+                params.append('username', encodeParam(username));
+
                 const response = await fetch(`${API_BASE}/ADMIN/DELETE_USER`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -561,9 +613,20 @@
                                 <div class="user-stat-item">
                                     <strong>Clients:</strong> ${user.clients || 0}
                                 </div>
+                                <div class="user-stat-item">
+                                    <strong>Rate Limit:</strong> ${user.rate_limit === 0 ? '∞ (unlimited)' : user.rate_limit + ' req/min'}
+                                </div>
+                                <div class="user-stat-item">
+                                    <strong>Current:</strong> ${user.current_req_min || 0} req/min
+                                </div>
                             </div>
                         </div>
                         <div class="user-actions">
+                            ${user.username !== 'public' ? `
+                                <button class="btn btn-primary" onclick="editRateLimit('${escapeHtml(user.username)}', ${user.rate_limit || 0})">
+                                    ⚙️ Rate Limit
+                                </button>
+                            ` : ''}
                             <button class="btn btn-danger" onclick="deleteUser('${escapeHtml(user.username)}')">
                                 🗑️ Delete
                             </button>

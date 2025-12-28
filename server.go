@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -28,15 +29,19 @@ type BrokerManager struct {
 	dataDir       string
 	defaultBroker *Broker
 	ctx           context.Context
+	fail2banJail  string
+	fail2banLevel string
 }
 
 // NewBrokerManager creates a new broker manager
-func NewBrokerManager(logger *log.Logger, dataDir string, allowPublic bool) *BrokerManager {
+func NewBrokerManager(logger *log.Logger, dataDir string, allowPublic bool, fail2banJail string, fail2banLevel string) *BrokerManager {
 	bm := &BrokerManager{
-		brokers: make(map[string]*Broker),
-		logger:  logger,
-		dataDir: dataDir,
-		ctx:     nil, // Will be set when Start() is called
+		brokers:       make(map[string]*Broker),
+		logger:        logger,
+		dataDir:       dataDir,
+		ctx:           nil, // Will be set when Start() is called
+		fail2banJail:  fail2banJail,
+		fail2banLevel: fail2banLevel,
 	}
 
 	// Note: Default broker creation is deferred until InitializeDefault() is called with context
@@ -72,7 +77,7 @@ func (bm *BrokerManager) InitializeDefault(ctx context.Context, allowPublic bool
 				}
 				userLogger := log.New(userLogFile, "[public] ", log.LstdFlags)
 
-				bm.defaultBroker = NewBroker(bm.logger, db, false)
+				bm.defaultBroker = NewBroker(bm.logger, db, false, bm.fail2banJail, bm.fail2banLevel)
 				bm.defaultBroker.SetUserLogger(userLogger, userLogPath)
 				bm.defaultBroker.LogUser("Public broker initialized")
 
@@ -131,7 +136,7 @@ func (bm *BrokerManager) GetOrCreateBroker(username string) (*Broker, error) {
 	userLogger := log.New(userLogFile, fmt.Sprintf("[%s] ", username), log.LstdFlags)
 
 	// Create broker
-	broker := NewBroker(bm.logger, db, false)
+	broker := NewBroker(bm.logger, db, false, bm.fail2banJail, bm.fail2banLevel)
 	broker.SetUserLogger(userLogger, userLogPath)
 	bm.brokers[username] = broker
 
@@ -310,19 +315,25 @@ func hashPassword(password string) string {
 
 // Server handles HTTP connections
 type Server struct {
-	port          int
-	timeout       time.Duration
-	logger        *log.Logger
-	brokerManager *BrokerManager
-	userAuth      *UserAuth
-	security      *SecurityChecker
-	debug         bool
-	version       string
-	allowPublic   bool
+	port           int
+	timeout        time.Duration
+	logger         *log.Logger
+	accessLogger   *RotatingLogger
+	errorLogger    *RotatingLogger
+	brokerManager  *BrokerManager
+	userAuth       *UserAuth
+	security       *SecurityChecker
+	rateLimiter    *RateLimiter
+	debug          bool
+	version        string
+	allowPublic    bool
+	maxRequestSize int64
+	maxTopicLength int
+	maxMessageSize int64
 }
 
 // NewServer creates a new HTTP server
-func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, allowedPeers []string) (*Server, error) {
+func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, allowedPeers []string, maxRequestSize int64, maxTopicLength int, maxMessageSize int64, defaultRateLimit int, fail2banJail string, fail2banLevel string, logDir string) (*Server, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
@@ -333,16 +344,36 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 		return nil, fmt.Errorf("failed to initialize user auth: %w", err)
 	}
 
+	// Create access logger
+	accessLogger, err := NewRotatingLogger(logDir, "moustique_access.log")
+	if err != nil {
+		logger.Printf("Warning: Failed to create access logger: %v", err)
+		accessLogger = nil // Continue without access logging
+	}
+
+	// Create error logger
+	errorLogger, errLog := NewRotatingLogger(logDir, "moustique_error.log")
+	if errLog != nil {
+		logger.Printf("Warning: Failed to create error logger: %v", errLog)
+		errorLogger = nil // Continue without error logging
+	}
+
 	return &Server{
-		port:          port,
-		timeout:       timeout,
-		logger:        logger,
-		brokerManager: NewBrokerManager(logger, dataDir, allowPublic),
-		userAuth:      userAuth,
-		security:      NewSecurityChecker(allowedPeers),
-		debug:         debug,
-		version:       Version,
-		allowPublic:   allowPublic,
+		port:           port,
+		timeout:        timeout,
+		logger:         logger,
+		accessLogger:   accessLogger,
+		errorLogger:    errorLogger,
+		brokerManager:  NewBrokerManager(logger, dataDir, allowPublic, fail2banJail, fail2banLevel),
+		userAuth:       userAuth,
+		security:       NewSecurityChecker(allowedPeers),
+		rateLimiter:    NewRateLimiter(defaultRateLimit),
+		debug:          debug,
+		version:        Version,
+		allowPublic:    allowPublic,
+		maxRequestSize: maxRequestSize,
+		maxTopicLength: maxTopicLength,
+		maxMessageSize: maxMessageSize,
 	}, nil
 }
 
@@ -372,6 +403,20 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.allowPublic {
 		s.logger.Printf("Public/unauthenticated access is ENABLED")
 	}
+
+	// Start rate limiter cleanup goroutine
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.rateLimiter.Cleanup()
+			}
+		}
+	}()
 
 	maxConnections := 1000
 	semaphore := make(chan struct{}, maxConnections)
@@ -481,17 +526,47 @@ func (s *Server) readRequest(conn net.Conn) (*http.Request, error) {
 }
 
 func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string) {
-	start := time.Now().UnixNano()
+	start := time.Now()
+	statusCode := 200 // default to 200 OK
+	var username string
+
+	// Defer access logging
+	defer func() {
+		if s.accessLogger != nil {
+			duration := float64(time.Since(start).Nanoseconds()) / 1e6 // milliseconds
+			s.accessLogger.LogAccess(peerHost, req.Method, req.URL.Path, username, statusCode, duration)
+		}
+	}()
 
 	// Parse form data
 	var rawParams url.Values
 	if req.Method == "GET" {
 		rawParams = req.URL.Query()
 	} else {
-		body, err := ioutil.ReadAll(req.Body)
+		// Limit request body size
+		limitedReader := io.LimitReader(req.Body, s.maxRequestSize)
+		body, err := ioutil.ReadAll(limitedReader)
 		req.Body.Close()
 		if err != nil {
 			s.sendBadRequest(conn)
+			return
+		}
+
+		// Check if body was truncated (exceeded limit)
+		if int64(len(body)) == s.maxRequestSize {
+			if s.debug {
+				s.logger.Printf("Request body too large from %s", peerHost)
+			}
+			// Record oversized request
+			defaultBroker := s.brokerManager.GetDefaultBroker()
+			if defaultBroker != nil {
+				defaultBroker.RecordInvalidRequest(peerHost, "oversized_request")
+			}
+			// Log error
+			if s.errorLogger != nil {
+				s.errorLogger.LogError(peerHost, "oversized_request", fmt.Sprintf("Request exceeded max size of %d bytes", s.maxRequestSize))
+			}
+			s.sendErrorWithStatus(conn, 413, "Request Entity Too Large")
 			return
 		}
 
@@ -554,6 +629,10 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 			s.handleAdminAddUser(conn, params)
 		case "ADMIN/DELETE_USER":
 			s.handleAdminDeleteUser(conn, params)
+		case "ADMIN/SET_RATE_LIMIT":
+			s.handleAdminSetRateLimit(conn, params)
+		case "ADMIN/GET_RATE_LIMIT":
+			s.handleAdminGetRateLimit(conn, params)
 		case "ADMIN/SERVER_LOG":
 			s.GetRecentLogs(conn, 100)
 		default:
@@ -566,7 +645,7 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	var broker *Broker
 	var err error
 
-	username := params["username"]
+	username = params["username"]  // Set in outer scope for access logging
 	password := params["password"]
 
 	if username == "" || password == "" {
@@ -586,7 +665,35 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	} else {
 		// Credentials provided - validate and get user broker
 		if !s.userAuth.ValidateUser(username, password) {
+			// Record invalid credentials attempt
+			defaultBroker := s.brokerManager.GetDefaultBroker()
+			if defaultBroker != nil {
+				defaultBroker.RecordInvalidRequest(peerHost, "invalid_credentials")
+			}
+			// Log error
+			if s.errorLogger != nil {
+				s.errorLogger.LogError(peerHost, "invalid_credentials", fmt.Sprintf("Failed login attempt for user: %s", username))
+			}
 			s.sendUnauthorized(conn, "Invalid credentials")
+			return
+		}
+
+		// Check rate limit for authenticated users
+		if !s.rateLimiter.AllowRequest(username) {
+			limit := s.rateLimiter.GetUserLimit(username)
+			if s.debug {
+				s.logger.Printf("Rate limit exceeded for user %s (limit: %d req/min)", username, limit)
+			}
+			// Get or create broker to record rate limit violation
+			broker, _ := s.brokerManager.GetOrCreateBroker(username)
+			if broker != nil {
+				broker.RecordInvalidRequest(peerHost, "rate_limit_exceeded")
+			}
+			// Log error
+			if s.errorLogger != nil {
+				s.errorLogger.LogError(peerHost, "rate_limit_exceeded", fmt.Sprintf("User %s exceeded rate limit of %d req/min", username, limit))
+			}
+			s.sendErrorWithStatus(conn, 429, "Too Many Requests")
 			return
 		}
 
@@ -616,7 +723,7 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	case "SUBSCRIBE":
 		s.handleSubscribe(conn, params, peerHost, broker)
 	case "PUTVAL":
-		s.handlePutVal(conn, params, broker)
+		s.handlePutVal(conn, params, peerHost, broker)
 	case "GETVAL":
 		s.handleGetVal(conn, params, broker)
 	case "GETVALSBYREGEX":
@@ -643,13 +750,17 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 			if s.debug {
 				s.logger.Printf("Invalid API endpoint '%s' from %s - banning", path, peerHost)
 			}
-			broker.RecordInvalidRequest(peerHost)
+			broker.RecordInvalidRequest(peerHost, "invalid_endpoint")
+			// Log error
+			if s.errorLogger != nil {
+				s.errorLogger.LogError(peerHost, "invalid_endpoint", fmt.Sprintf("Invalid API endpoint: %s", path))
+			}
 		}
 		s.sendNotFound(conn)
 	}
 
-	end := time.Now().UnixNano()
-	elapsed := float64(end-start) / 1e6
+	// Track serve time for broker stats
+	elapsed := float64(time.Since(start).Nanoseconds()) / 1e6
 	broker.serveTime += elapsed
 }
 
@@ -674,6 +785,29 @@ func (s *Server) handlePickup(conn net.Conn, params map[string]string, peerHost 
 	s.sendJSON(conn, messages)
 }
 
+// validateInput validates topic and message inputs
+func (s *Server) validateInput(topic, message string) error {
+	// Validate topic length
+	if len(topic) > s.maxTopicLength {
+		return fmt.Errorf("topic name too long (max %d characters)", s.maxTopicLength)
+	}
+
+	// Validate topic characters (alphanumeric, underscore, hyphen, dot, slash)
+	for _, c := range topic {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			 (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/') {
+			return fmt.Errorf("topic contains invalid characters")
+		}
+	}
+
+	// Validate message size
+	if int64(len(message)) > s.maxMessageSize {
+		return fmt.Errorf("message too large (max %d bytes)", s.maxMessageSize)
+	}
+
+	return nil
+}
+
 func (s *Server) handlePost(conn net.Conn, params map[string]string, peerHost string, broker *Broker) {
 	topic := params["topic"]
 	message := params["message"]
@@ -681,6 +815,20 @@ func (s *Server) handlePost(conn net.Conn, params map[string]string, peerHost st
 
 	if topic == "" || message == "" {
 		s.sendNotFound(conn)
+		return
+	}
+
+	// Validate inputs
+	if err := s.validateInput(topic, message); err != nil {
+		if s.debug {
+			s.logger.Printf("Validation error from %s: %v", peerHost, err)
+		}
+		broker.RecordInvalidRequest(peerHost, "validation_error")
+		// Log error
+		if s.errorLogger != nil {
+			s.errorLogger.LogError(peerHost, "validation_error", fmt.Sprintf("POST validation failed: %v", err))
+		}
+		s.sendBadRequest(conn)
 		return
 	}
 
@@ -709,6 +857,20 @@ func (s *Server) handleSubscribe(conn net.Conn, params map[string]string, peerHo
 		return
 	}
 
+	// Validate topic (message can be empty for subscribe)
+	if err := s.validateInput(topic, ""); err != nil {
+		if s.debug {
+			s.logger.Printf("Validation error from %s: %v", peerHost, err)
+		}
+		broker.RecordInvalidRequest(peerHost, "validation_error")
+		// Log error
+		if s.errorLogger != nil {
+			s.errorLogger.LogError(peerHost, "validation_error", fmt.Sprintf("SUBSCRIBE validation failed: %v", err))
+		}
+		s.sendBadRequest(conn)
+		return
+	}
+
 	err := broker.Subscribe(topic, client, peerHost)
 	if err != nil {
 		s.sendError(conn, err)
@@ -718,7 +880,7 @@ func (s *Server) handleSubscribe(conn net.Conn, params map[string]string, peerHo
 	s.sendOK(conn)
 }
 
-func (s *Server) handlePutVal(conn net.Conn, params map[string]string, broker *Broker) {
+func (s *Server) handlePutVal(conn net.Conn, params map[string]string, peerHost string, broker *Broker) {
 	valname := params["valname"]
 	val := params["val"]
 	message := params["message"]
@@ -726,6 +888,20 @@ func (s *Server) handlePutVal(conn net.Conn, params map[string]string, broker *B
 
 	if valname == "" || (val == "" && message == "") {
 		s.sendNotFound(conn)
+		return
+	}
+
+	// Validate valname as topic and message
+	if err := s.validateInput(valname, message); err != nil {
+		if s.debug {
+			s.logger.Printf("Validation error: %v", err)
+		}
+		broker.RecordInvalidRequest(peerHost, "validation_error")
+		// Log error
+		if s.errorLogger != nil {
+			s.errorLogger.LogError(peerHost, "validation_error", fmt.Sprintf("PUT validation failed: %v", err))
+		}
+		s.sendBadRequest(conn)
 		return
 	}
 
@@ -894,11 +1070,13 @@ func (s *Server) validateAdminPassword(password string) bool {
 func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 	// Get all users with their stats
 	type UserInfo struct {
-		Username string `json:"username"`
-		Requests int64  `json:"requests"`
-		Messages int64  `json:"messages"`
-		Topics   int    `json:"topics"`
-		Clients  int    `json:"clients"`
+		Username      string `json:"username"`
+		Requests      int64  `json:"requests"`
+		Messages      int64  `json:"messages"`
+		Topics        int    `json:"topics"`
+		Clients       int    `json:"clients"`
+		RateLimit     int    `json:"rate_limit"`      // requests per minute, 0 = unlimited
+		CurrentReqMin int    `json:"current_req_min"` // current requests in last minute
 	}
 
 	users := []UserInfo{}
@@ -914,11 +1092,13 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 		broker.mu.RLock()
 
 		publicInfo := UserInfo{
-			Username: "public",
-			Requests: broker.requestCount,
-			Messages: broker.messagesProcessed,
-			Topics:   len(broker.subscriptions),
-			Clients:  len(broker.clients),
+			Username:      "public",
+			Requests:      broker.requestCount,
+			Messages:      broker.messagesProcessed,
+			Topics:        len(broker.subscriptions),
+			Clients:       len(broker.clients),
+			RateLimit:     0, // public broker has no rate limit
+			CurrentReqMin: 0,
 		}
 
 		// Aggregate totals
@@ -948,7 +1128,9 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 		broker := s.brokerManager.GetBroker(username)
 
 		userInfo := UserInfo{
-			Username: username,
+			Username:      username,
+			RateLimit:     s.rateLimiter.GetUserLimit(username),
+			CurrentReqMin: s.rateLimiter.GetUserRequestCount(username),
 		}
 
 		if broker != nil {
@@ -1050,6 +1232,58 @@ func (s *Server) handleAdminDeleteUser(conn net.Conn, params map[string]string) 
 	})
 }
 
+func (s *Server) handleAdminSetRateLimit(conn net.Conn, params map[string]string) {
+	username := params["username"]
+	limitStr := params["limit"]
+
+	if username == "" || limitStr == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 0 {
+		s.sendJSON(conn, map[string]string{
+			"status":  "error",
+			"message": "Invalid limit value (must be >= 0, 0 = unlimited)",
+		})
+		return
+	}
+
+	s.rateLimiter.SetUserLimit(username, limit)
+
+	msg := fmt.Sprintf("Rate limit set to %d req/min for user '%s'", limit, username)
+	if limit == 0 {
+		msg = fmt.Sprintf("Rate limit removed (unlimited) for user '%s'", username)
+	}
+
+	s.sendJSON(conn, map[string]interface{}{
+		"status":  "success",
+		"message": msg,
+		"username": username,
+		"limit": limit,
+	})
+}
+
+func (s *Server) handleAdminGetRateLimit(conn net.Conn, params map[string]string) {
+	username := params["username"]
+
+	if username == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	limit := s.rateLimiter.GetUserLimit(username)
+	count := s.rateLimiter.GetUserRequestCount(username)
+
+	s.sendJSON(conn, map[string]interface{}{
+		"status":   "success",
+		"username": username,
+		"limit":    limit,
+		"current_count": count,
+	})
+}
+
 // Response helpers
 
 func (s *Server) sendOK(conn net.Conn) {
@@ -1116,6 +1350,20 @@ func (s *Server) sendError(conn net.Conn, err error) {
 	fmt.Fprintf(conn, "HTTP/1.0 500 Internal Server Error\r\n")
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "Error: %v", err)
+}
+
+func (s *Server) sendErrorWithStatus(conn net.Conn, statusCode int, message string) {
+	statusText := "Error"
+	switch statusCode {
+	case 413:
+		statusText = "Request Entity Too Large"
+	case 429:
+		statusText = "Too Many Requests"
+	}
+	fmt.Fprintf(conn, "HTTP/1.0 %d %s\r\n", statusCode, statusText)
+	fmt.Fprintf(conn, "Connection: close\r\n")
+	fmt.Fprintf(conn, "\r\n")
+	fmt.Fprintf(conn, "%s", message)
 }
 
 func formatJSON(data interface{}) string {

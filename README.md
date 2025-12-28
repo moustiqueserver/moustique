@@ -366,7 +366,18 @@ security:
 
 logging:
   level: "info"
-  file: "./logs/moustique.log"
+  directory: "/var/log/moustique"  # Directory for all log files
+
+security:
+  allowed_peers:
+    - "192.168.0.0/16"
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+  max_topic_length: 256
+  max_message_size: 1048576  # 1MB
+  default_rate_limit: 1000   # Requests per minute (0 = unlimited)
+  fail2ban_jail: "moustique"
+  fail2ban_level: "normal"   # minimal, relaxed, normal, strict
 
 performance:
   message_queue_timeout: 5m
@@ -411,6 +422,96 @@ docker run -p 33335:33335 -v $(pwd)/data:/data moustique/moustique
 # Docker Compose
 docker-compose up -d
 ```
+
+## 🛡️ Security & Monitoring
+
+### Logging
+
+Moustique creates three separate log files in the configured logging directory:
+
+- **`moustique.log`** - Main server log (debug, info, warnings, errors)
+- **`moustique_access.log`** - All HTTP requests with timing information
+- **`moustique_error.log`** - Security events and errors only
+
+**Access log format:**
+```
+2025-12-28 00:58:12 | ::1 | POST | /POST | username | 200 | 1.23ms
+```
+
+**Error log format:**
+```
+2025-12-28 00:58:33 | ::1 | invalid_endpoint | Invalid API endpoint: SCAN
+2025-12-28 00:58:45 | 192.168.1.100 | invalid_credentials | Failed login: baduser
+2025-12-28 00:59:01 | 10.0.0.50 | rate_limit_exceeded | User alice exceeded 1000 req/min
+```
+
+**Log rotation:**
+- Each log file is automatically rotated at 3MB
+- Keeps 2 old files per log type (e.g., `moustique_error.log.1`, `moustique_error.log.2`)
+- Maximum total disk usage: ~27MB (3 logs × 3 files × 3MB)
+
+### Fail2ban Integration
+
+Moustique includes built-in fail2ban integration with configurable strictness levels:
+
+**Configuration:**
+```yaml
+security:
+  fail2ban_jail: "moustique"        # Jail name (empty = disabled)
+  fail2ban_level: "normal"          # Strictness level
+```
+
+**Fail2ban levels:**
+
+| Level | Bans on | Use case |
+|-------|---------|----------|
+| `minimal` | Endpoint scanning only | Public-facing servers with many users |
+| `relaxed` | Scanning + invalid credentials | Semi-public servers |
+| `normal` | + validation errors | **Default** - Balanced security |
+| `strict` | + oversized requests + rate limits | High-security environments |
+
+**Tracked violations:**
+- `invalid_endpoint` - API endpoint scanning attempts
+- `invalid_credentials` - Failed login attempts
+- `validation_error` - Malformed data (oversized topics/messages)
+- `oversized_request` - Request body exceeds limits
+- `rate_limit_exceeded` - Too many requests per minute
+
+**Setup fail2ban jail:**
+
+Create `/etc/fail2ban/jail.d/moustique.conf`:
+```ini
+[moustique]
+enabled = true
+port = 33334
+logpath = /var/log/moustique/moustique_error.log
+maxretry = 3
+findtime = 600
+bantime = 3600
+```
+
+Create `/etc/fail2ban/filter.d/moustique.conf`:
+```ini
+[Definition]
+failregex = ^.* \| <HOST> \| (invalid_endpoint|invalid_credentials|validation_error) \|
+ignoreregex =
+```
+
+Then reload fail2ban:
+```bash
+sudo systemctl reload fail2ban
+```
+
+### Rate Limiting
+
+Configure per-user rate limits via web UI (`/superadmin`) or config:
+
+```yaml
+security:
+  default_rate_limit: 1000  # Requests per minute (0 = unlimited)
+```
+
+Rate limits can be set individually for each user through the admin interface.
 
 ## 🔧 Production Deployment
 
@@ -533,11 +634,17 @@ Benchmarks on a modest server (4 CPU cores, 8GB RAM):
 - [x] Go client
 - [x] Java client
 - [x] Perl client
+- [x] Access logging with rotation
+- [x] Fail2ban integration with configurable levels
+- [x] Rate limiting per user
+- [x] IP-based access control (CIDR support)
 - [ ] TLS/HTTPS support
 - [ ] Authentication plugins
 - [ ] Message retention policies
 - [ ] Clustering support
 - [ ] WebSocket support
+- [ ] MQTT protocol support
+- [ ] NOSTR relay support
 
 ## 📜 License
 
