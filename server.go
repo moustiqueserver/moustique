@@ -795,7 +795,7 @@ func (s *Server) validateInput(topic, message string) error {
 	// Validate topic characters (alphanumeric, underscore, hyphen, dot, slash)
 	for _, c := range topic {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/' || c == ' ' || c == ':' || c == 'è') {
+			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/' || c == ' ' || c == ':' || c == 'è' || c == 'é') {
 			return fmt.Errorf("topic %s contains invalid characters", topic)
 		}
 	}
@@ -818,7 +818,7 @@ func (s *Server) validateSubscribeTopic(topic string) error {
 	// Validate topic characters (allow +, *, and # for wildcards)
 	for _, c := range topic {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/' || c == '+' || c == '*' || c == '#' || c == ' ' || c == ':' || c == 'è') {
+			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/' || c == '+' || c == '*' || c == '#' || c == ' ' || c == ':' || c == 'è' || c == 'é') {
 			return fmt.Errorf("topic %s contains invalid characters", topic)
 		}
 	}
