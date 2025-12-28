@@ -345,23 +345,17 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 	}
 
 	// Create access logger
-	logger.Printf("Attempting to create access logger in: %s", logDir)
 	accessLogger, err := NewRotatingLogger(logDir, "moustique_access.log")
 	if err != nil {
 		logger.Printf("Warning: Failed to create access logger: %v", err)
 		accessLogger = nil // Continue without access logging
-	} else {
-		logger.Printf("Access logger created successfully")
 	}
 
 	// Create error logger
-	logger.Printf("Attempting to create error logger in: %s", logDir)
 	errorLogger, errLog := NewRotatingLogger(logDir, "moustique_error.log")
 	if errLog != nil {
 		logger.Printf("Warning: Failed to create error logger: %v", errLog)
 		errorLogger = nil // Continue without error logging
-	} else {
-		logger.Printf("Error logger created successfully")
 	}
 
 	return &Server{
@@ -814,6 +808,24 @@ func (s *Server) validateInput(topic, message string) error {
 	return nil
 }
 
+// validateSubscribeTopic validates topic for SUBSCRIBE (allows wildcards)
+func (s *Server) validateSubscribeTopic(topic string) error {
+	// Validate topic length
+	if len(topic) > s.maxTopicLength {
+		return fmt.Errorf("topic name too long (max %d characters)", s.maxTopicLength)
+	}
+
+	// Validate topic characters (allow +, *, and # for wildcards)
+	for _, c := range topic {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			 (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/' || c == '+' || c == '*' || c == '#') {
+			return fmt.Errorf("topic contains invalid characters")
+		}
+	}
+
+	return nil
+}
+
 func (s *Server) handlePost(conn net.Conn, params map[string]string, peerHost string, broker *Broker) {
 	topic := params["topic"]
 	message := params["message"]
@@ -863,8 +875,8 @@ func (s *Server) handleSubscribe(conn net.Conn, params map[string]string, peerHo
 		return
 	}
 
-	// Validate topic (message can be empty for subscribe)
-	if err := s.validateInput(topic, ""); err != nil {
+	// Validate topic for subscribe (allow wildcards + and *)
+	if err := s.validateSubscribeTopic(topic); err != nil {
 		if s.debug {
 			s.logger.Printf("Validation error from %s: %v", peerHost, err)
 		}

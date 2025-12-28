@@ -60,44 +60,16 @@ func main() {
 	var logOutput io.Writer = os.Stderr
 
 	if config.Logging.Directory != "" {
-		fmt.Printf("DEBUG: Attempting to setup logging in directory: %s\n", config.Logging.Directory)
 		// Ensure log directory exists
 		if err := os.MkdirAll(config.Logging.Directory, 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "Could not create log directory %s: %v\n", config.Logging.Directory, err)
-			fmt.Printf("DEBUG: Failed to create log directory: %v\n", err)
 		} else {
 			logPath := filepath.Join(config.Logging.Directory, "moustique.log")
-			fmt.Printf("DEBUG: Attempting to open log file: %s\n", logPath)
-
-			// Use O_SYNC to force immediate writes and bypass any buffering
-			file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0644)
+			file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Could not open log file %s: %v\n", logPath, err)
-				fmt.Printf("DEBUG: Failed to open log file: %v\n", err)
 			} else {
-				// Get file descriptor info
-				fmt.Printf("DEBUG: File descriptor: %v\n", file.Fd())
-				stat, _ := file.Stat()
-				fmt.Printf("DEBUG: File stat name: %s, size: %d\n", stat.Name(), stat.Size())
-
-				// Test write directly to the file to verify it works
-				testMsg := fmt.Sprintf("[%s] TEST: Direct file write before logger creation\n", time.Now().Format("2006/01/02 15:04:05"))
-				n, err := file.WriteString(testMsg)
-				if err != nil {
-					fmt.Printf("DEBUG: Direct write failed: %v\n", err)
-				} else {
-					fmt.Printf("DEBUG: Direct write succeeded, wrote %d bytes\n", n)
-				}
-
-				// Force sync to disk
-				if err := file.Sync(); err != nil {
-					fmt.Printf("DEBUG: Sync failed: %v\n", err)
-				} else {
-					fmt.Printf("DEBUG: Sync succeeded\n")
-				}
-
 				logOutput = file
-				fmt.Printf("DEBUG: Successfully opened log file: %s\n", logPath)
 			}
 		}
 	} else if *debug {
@@ -105,9 +77,6 @@ func main() {
 	}
 
 	logger := log.New(logOutput, "[moustique] ", log.LstdFlags)
-	fmt.Printf("DEBUG: Logger created, logOutput type: %T\n", logOutput)
-	logger.Printf("Logger initialization test - this should appear in moustique.log")
-	fmt.Printf("DEBUG: Test message written to logger\n")
 
 	fileVersion, err := GetFileVersion()
 	if err != nil {
