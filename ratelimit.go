@@ -27,6 +27,8 @@ func (rl *RateLimiter) SetUserLimit(username string, limit int) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	rl.userLimits[username] = limit
+	// Clear request history when limit changes to allow immediate effect
+	delete(rl.userRequests, username)
 }
 
 // GetUserLimit gets the rate limit for a user
