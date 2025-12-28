@@ -373,7 +373,7 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 		brokerManager:  NewBrokerManager(logger, dataDir, allowPublic, fail2banJail, fail2banLevel),
 		userAuth:       userAuth,
 		security:       NewSecurityChecker(allowedPeers),
-		rateLimiter:    NewRateLimiter(defaultRateLimit),
+		rateLimiter:    NewRateLimiter(defaultRateLimit, dataDir),
 		debug:          debug,
 		version:        Version,
 		allowPublic:    allowPublic,
