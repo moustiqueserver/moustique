@@ -795,7 +795,7 @@ func (s *Server) validateInput(topic, message string) error {
 	// Validate topic characters (alphanumeric, underscore, hyphen, dot, slash)
 	for _, c := range topic {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/') {
+			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/' || c == ' ' || c == ':' || c == 'è') {
 			return fmt.Errorf("topic %s contains invalid characters", topic)
 		}
 	}
