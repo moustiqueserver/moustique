@@ -68,11 +68,21 @@ func main() {
 		} else {
 			logPath := filepath.Join(config.Logging.Directory, "moustique.log")
 			fmt.Printf("DEBUG: Attempting to open log file: %s\n", logPath)
-			file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+
+			// Use O_SYNC to force immediate writes and bypass any buffering
+			file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0644)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Could not open log file %s: %v\n", logPath, err)
 				fmt.Printf("DEBUG: Failed to open log file: %v\n", err)
 			} else {
+				// Test write directly to the file to verify it works
+				testMsg := fmt.Sprintf("[%s] TEST: Direct file write before logger creation\n", time.Now().Format("2006/01/02 15:04:05"))
+				if _, err := file.WriteString(testMsg); err != nil {
+					fmt.Printf("DEBUG: Direct write failed: %v\n", err)
+				} else {
+					fmt.Printf("DEBUG: Direct write succeeded\n")
+				}
+
 				logOutput = file
 				fmt.Printf("DEBUG: Successfully opened log file: %s\n", logPath)
 			}
@@ -83,6 +93,8 @@ func main() {
 
 	logger := log.New(logOutput, "[moustique] ", log.LstdFlags)
 	fmt.Printf("DEBUG: Logger created, logOutput type: %T\n", logOutput)
+	logger.Printf("Logger initialization test - this should appear in moustique.log")
+	fmt.Printf("DEBUG: Test message written to logger\n")
 
 	fileVersion, err := GetFileVersion()
 	if err != nil {
