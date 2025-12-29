@@ -743,17 +743,25 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	case "CROOKS":
 		s.handleCrooks(conn, params, broker)
 	default:
-		// Only ban if it's not a browser resource request (favicon, css, js, etc)
-		// Browser requests for resources should just get 404, not banned
-		if !strings.Contains(path, ".") && path != "favicon.ico" {
-			// Looks like an API endpoint that doesn't exist - record as crook and ban
+		// Whitelist legitimate browser resources that should just get 404, not banned
+		legitimateResources := []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot"}
+		isLegitResource := false
+		for _, ext := range legitimateResources {
+			if strings.HasSuffix(path, ext) {
+				isLegitResource = true
+				break
+			}
+		}
+
+		// Ban everything else - scanning attempts, invalid endpoints, etc
+		if !isLegitResource {
 			if s.debug {
-				s.logger.Printf("Invalid API endpoint '%s' from %s - banning", path, peerHost)
+				s.logger.Printf("Invalid endpoint '%s' from %s - recording as crook", path, peerHost)
 			}
 			broker.RecordInvalidRequest(peerHost, "invalid_endpoint")
 			// Log error
 			if s.errorLogger != nil {
-				s.errorLogger.LogError(peerHost, "invalid_endpoint", fmt.Sprintf("Invalid API endpoint: %s", path))
+				s.errorLogger.LogError(peerHost, "invalid_endpoint", fmt.Sprintf("Invalid endpoint: %s", path))
 			}
 		}
 		s.sendNotFound(conn)
