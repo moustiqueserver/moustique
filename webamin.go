@@ -2,6 +2,8 @@ package main
 
 import (
 	_ "embed"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -109,25 +111,100 @@ func (s *Server) GetUserLogs(conn net.Conn, broker *Broker, lines int) {
 		return
 	}
 
-	content, err := os.ReadFile(logPath)
+	// Get last N lines efficiently using tail-like approach
+	recentLines, totalLines, err := readLastLines(logPath, lines)
 	if err != nil {
 		s.sendJSON(conn, map[string]interface{}{
-			"lines": []string{"User log file not found or empty"},
+			"lines": []string{fmt.Sprintf("Error reading log: %v", err)},
 			"total": 0,
 		})
 		return
 	}
 
+	s.sendJSON(conn, map[string]interface{}{
+		"lines": recentLines,
+		"total": totalLines,
+	})
+}
+
+// readLastLines reads the last N lines from a file efficiently
+func readLastLines(filepath string, n int) ([]string, int, error) {
+	file, err := os.Open(filepath)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer file.Close()
+
+	// Get file size
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, 0, err
+	}
+	fileSize := stat.Size()
+
+	// If file is small (< 100KB), just read it all
+	if fileSize < 100000 {
+		content, err := io.ReadAll(file)
+		if err != nil {
+			return nil, 0, err
+		}
+		allLines := strings.Split(string(content), "\n")
+		totalLines := len(allLines)
+		start := totalLines - n
+		if start < 0 {
+			start = 0
+		}
+		return allLines[start:], totalLines, nil
+	}
+
+	// For large files, read backwards from end
+	// Estimate: average line is ~100 bytes, so read n*150 bytes to be safe
+	bufSize := int64(n * 150)
+	if bufSize > fileSize {
+		bufSize = fileSize
+	}
+
+	// Seek to position
+	offset := fileSize - bufSize
+	if offset < 0 {
+		offset = 0
+	}
+
+	_, err = file.Seek(offset, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Read the chunk
+	buf := make([]byte, bufSize)
+	bytesRead, err := file.Read(buf)
+	if err != nil && err != io.EOF {
+		return nil, 0, err
+	}
+
+	// Split into lines
+	lines := strings.Split(string(buf[:bytesRead]), "\n")
+
+	// Remove first partial line if we didn't start at beginning
+	if offset > 0 && len(lines) > 0 {
+		lines = lines[1:]
+	}
+
 	// Get last N lines
-	logLines := strings.Split(string(content), "\n")
-	start := len(logLines) - lines
+	start := len(lines) - n
 	if start < 0 {
 		start = 0
 	}
 
-	recentLines := logLines[start:]
-	s.sendJSON(conn, map[string]interface{}{
-		"lines": recentLines,
-		"total": len(logLines),
-	})
+	// Estimate total lines (this is approximate for large files)
+	totalLines := len(lines)
+	if offset > 0 {
+		// Rough estimate based on bytes per line
+		avgLineLen := bufSize / int64(len(lines))
+		if avgLineLen > 0 {
+			totalLines = int(fileSize / avgLineLen)
+		}
+	}
+
+	return lines[start:], totalLines, nil
 }
