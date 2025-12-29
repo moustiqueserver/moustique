@@ -11,12 +11,12 @@ import (
 
 // RotatingLogger handles logging with rotation
 type RotatingLogger struct {
-	mu           sync.Mutex
-	file         *os.File
-	logPath      string
-	maxSize      int64 // in bytes
-	currentSize  int64
-	rotateCount  int
+	mu          sync.Mutex
+	file        *os.File
+	logPath     string
+	maxSize     int64 // in bytes
+	currentSize int64
+	rotateCount int
 }
 
 // NewRotatingLogger creates a new rotating logger
@@ -44,9 +44,9 @@ func NewRotatingLogger(logDir, filename string) (*RotatingLogger, error) {
 	rl := &RotatingLogger{
 		file:        file,
 		logPath:     logPath,
-		maxSize:     3 * 1024 * 1024, // 3MB max per file
+		maxSize:     2 * 1024 * 1024, // 2MB max per file
 		currentSize: fileInfo.Size(),
-		rotateCount: 2, // Keep 2 old files (3 total: current + 2 old)
+		rotateCount: 1, // Keep 2 old files (2 total: current + 1 old)
 	}
 
 	return rl, nil

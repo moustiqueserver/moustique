@@ -38,28 +38,28 @@ type Client struct {
 
 // Provider tracks message posters
 type Provider struct {
-	Name                     string              `json:"Name"`
-	LatestPostsByTopic       map[string]*Message `json:"latest_posts_by_topic"`
-	LatestPost               *Message            `json:"latest_post"`
-	IP                       string              `json:"IP"`
-	FirstSeen                int64               `json:"FirstSeen"`
-	FirstSeenNiceDatetime    string              `json:"FirstSeenNiceDatetime"`
-	LatestPostTime           int64               `json:"LatestPostTime"`
-	LatestPostNiceDatetime   string              `json:"LatestPostNiceDatetime"`
-	MessageCount             int                 `json:"MessageCount"`
+	Name                   string              `json:"Name"`
+	LatestPostsByTopic     map[string]*Message `json:"latest_posts_by_topic"`
+	LatestPost             *Message            `json:"latest_post"`
+	IP                     string              `json:"IP"`
+	FirstSeen              int64               `json:"FirstSeen"`
+	FirstSeenNiceDatetime  string              `json:"FirstSeenNiceDatetime"`
+	LatestPostTime         int64               `json:"LatestPostTime"`
+	LatestPostNiceDatetime string              `json:"LatestPostNiceDatetime"`
+	MessageCount           int                 `json:"MessageCount"`
 }
 
 // CrookInfo tracks bad actors making invalid requests
 type CrookInfo struct {
-	IP                 string `json:"IP"`
-	Attempts           int    `json:"Attempts"`
-	FirstSeen          int64  `json:"FirstSeen"`
+	IP                    string `json:"IP"`
+	Attempts              int    `json:"Attempts"`
+	FirstSeen             int64  `json:"FirstSeen"`
 	FirstSeenNiceDatetime string `json:"FirstSeenNiceDatetime"`
-	LastSeen           int64  `json:"LastSeen"`
+	LastSeen              int64  `json:"LastSeen"`
 	LastSeenNiceDatetime  string `json:"LastSeenNiceDatetime"`
-	BannedAt           int64  `json:"BannedAt"`
+	BannedAt              int64  `json:"BannedAt"`
 	BannedAtNiceDatetime  string `json:"BannedAtNiceDatetime"`
-	IsBanned           bool   `json:"IsBanned"`
+	IsBanned              bool   `json:"IsBanned"`
 }
 
 // Broker manages message routing and subscriptions
@@ -209,8 +209,6 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	}
 	b.minuteMessageCount++
 
-	b.LogUser("Published message to %s from %s (IP: %s)", topic, from, ip)
-
 	if from == "" {
 		from = "UNKNOWN"
 	}
@@ -228,11 +226,11 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	provider, exists := b.providers[from]
 	if !exists {
 		provider = &Provider{
-			Name:                   from,
-			LatestPostsByTopic:     make(map[string]*Message),
-			FirstSeen:              updatedTime,
-			FirstSeenNiceDatetime:  formatNiceDateTime(updatedTime),
-			MessageCount:           0,
+			Name:                  from,
+			LatestPostsByTopic:    make(map[string]*Message),
+			FirstSeen:             updatedTime,
+			FirstSeenNiceDatetime: formatNiceDateTime(updatedTime),
+			MessageCount:          0,
 		}
 		b.providers[from] = provider
 	}
@@ -331,7 +329,7 @@ func (b *Broker) Pickup(clientName, ip string) (map[string][]*Message, error) {
 		client.LatestPickupNiceDatetime = formatNiceDateTime(now)
 		client.LatestSystemPickup = now
 		client.RequestCounter++
-		client.IP = ip  // Update IP in case it changed
+		client.IP = ip // Update IP in case it changed
 	} else {
 		if b.debug {
 			b.logger.Printf("Pickup request for unknown client: %s", clientName)
@@ -747,13 +745,13 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 	if !exists {
 		// First offense - create entry and publish system notification
 		crook = &CrookInfo{
-			IP:                   ip,
-			Attempts:             1,
-			FirstSeen:            now,
+			IP:                    ip,
+			Attempts:              1,
+			FirstSeen:             now,
 			FirstSeenNiceDatetime: formatNiceDateTime(now),
-			LastSeen:             now,
+			LastSeen:              now,
 			LastSeenNiceDatetime:  formatNiceDateTime(now),
-			IsBanned:             false,
+			IsBanned:              false,
 		}
 		b.crooks[ip] = crook
 
