@@ -1,220 +1,142 @@
 #!/bin/bash
-# Test suite for all Moustique clients
-# Tests: Python, JavaScript, Java, Go, Perl, and CLI
+# Test all Moustique clients (HTTP + MQTT)
 
-# set -e  # Exit on error - commented out for debugging
+set -e
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-MOUSTIQUE_HOST="${MOUSTIQUE_HOST:-localhost}"
-MOUSTIQUE_PORT="${MOUSTIQUE_PORT:-33334}"
-TEST_USER="${TEST_USER:-testuser}"
-TEST_PASS="${TEST_PASS:-testpass123}"
-TEST_TOPIC="/test/client"
+# Get the directory where the script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the project root (parent of tests/)
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# Counters
-TESTS_RUN=0
-TESTS_PASSED=0
-TESTS_FAILED=0
+# Change to project root
+cd "$PROJECT_ROOT"
 
-# Function to print colored output
-print_header() {
-    echo -e "${BLUE}================================================${NC}"
-    echo -e "${BLUE}$1${NC}"
-    echo -e "${BLUE}================================================${NC}"
-}
+# Default values
+SERVER_IP="${1:-localhost}"
+SERVER_PORT="${2:-33334}"
+USERNAME="${3:-demo}"
+PASSWORD="${4:-demo123}"
+MQTT_PORT="${5:-1883}"
 
-print_success() {
-    echo -e "${GREEN}✓ $1${NC}"
-    ((TESTS_PASSED++))
-}
+echo ""
+echo "======================================================================"
+echo "Testing all Moustique clients (HTTP + MQTT)"
+echo "======================================================================"
+echo "Server: $SERVER_IP:$SERVER_PORT"
+echo "MQTT Port: $MQTT_PORT"
+echo "Username: $USERNAME"
+echo "======================================================================"
+echo ""
 
-print_error() {
-    echo -e "${RED}✗ $1${NC}"
-    ((TESTS_FAILED++))
-}
-
-print_info() {
-    echo -e "${YELLOW}ℹ $1${NC}"
-}
+FAILED_TESTS=()
+PASSED_TESTS=()
 
 # Function to run a test
 run_test() {
-    ((TESTS_RUN++))
-    local test_name="$1"
-    local test_cmd="$2"
+    local name=$1
+    local command=$2
 
     echo ""
-    echo -e "${YELLOW}Testing: $test_name${NC}"
+    echo "----------------------------------------------------------------------"
+    echo -e "${YELLOW}Running $name test...${NC}"
+    echo "----------------------------------------------------------------------"
 
-    if eval "$test_cmd" > /tmp/test_output.log 2>&1; then
-        print_success "$test_name passed"
-        return 0
+    if eval "$command"; then
+        echo -e "${GREEN}✓ $name test PASSED${NC}"
+        PASSED_TESTS+=("$name")
     else
-        print_error "$test_name failed"
-        echo "Command: $test_cmd"
-        echo "Output:"
-        cat /tmp/test_output.log
-        return 1
+        echo -e "${RED}✗ $name test FAILED${NC}"
+        FAILED_TESTS+=("$name")
     fi
 }
 
-# Check if server is running
-check_server() {
-    print_info "Checking if Moustique server is running on $MOUSTIQUE_HOST:$MOUSTIQUE_PORT..."
-    if curl -s "http://$MOUSTIQUE_HOST:$MOUSTIQUE_PORT/VERSION" > /dev/null 2>&1; then
-        print_success "Server is running"
-        return 0
-    else
-        print_error "Server is not running on $MOUSTIQUE_HOST:$MOUSTIQUE_PORT"
-        echo "Please start the server first: ./moustique"
-        exit 1
-    fi
-}
+# Test Python client
+if command -v python3 &> /dev/null; then
+    run_test "Python" "cd '$PROJECT_ROOT/clients/python' && python3 tests/test_client.py $SERVER_IP $SERVER_PORT $USERNAME $PASSWORD $MQTT_PORT"
+else
+    echo -e "${YELLOW}⚠ Skipping Python test (python3 not found)${NC}"
+fi
 
-# Main test execution
-print_header "Moustique Client Test Suite"
-echo "Host: $MOUSTIQUE_HOST"
-echo "Port: $MOUSTIQUE_PORT"
-echo "Test User: $TEST_USER"
+# Test JavaScript client
+if command -v node &> /dev/null; then
+    # Install dependencies if needed
+    if [ ! -d "$PROJECT_ROOT/clients/javascript/node_modules" ]; then
+        echo "Installing JavaScript dependencies..."
+        (cd "$PROJECT_ROOT/clients/javascript" && npm install)
+    fi
+    run_test "JavaScript" "cd '$PROJECT_ROOT/clients/javascript' && node tests/test_client.js $SERVER_IP $SERVER_PORT $USERNAME $PASSWORD $MQTT_PORT"
+else
+    echo -e "${YELLOW}⚠ Skipping JavaScript test (node not found)${NC}"
+fi
+
+# Test Go client
+if command -v go &> /dev/null; then
+    # Get dependencies
+    echo "Getting Go dependencies..."
+    (cd "$PROJECT_ROOT/clients/go" && go mod tidy &> /dev/null)
+    run_test "Go" "cd '$PROJECT_ROOT/clients/go' && go run test_client.go $SERVER_IP $SERVER_PORT $USERNAME $PASSWORD $MQTT_PORT"
+else
+    echo -e "${YELLOW}⚠ Skipping Go test (go not found)${NC}"
+fi
+
+# Test Java client
+if command -v mvn &> /dev/null; then
+    # Always compile to ensure latest changes are included
+    echo "Compiling Java client..."
+    (cd "$PROJECT_ROOT/clients/java" && mvn clean compile -q)
+
+    run_test "Java" "cd '$PROJECT_ROOT/clients/java' && mvn exec:java -Dexec.mainClass=moustique.TestClient -Dexec.args=\"$SERVER_IP $SERVER_PORT $USERNAME $PASSWORD $MQTT_PORT\" -q"
+else
+    echo -e "${YELLOW}⚠ Skipping Java test (mvn not found)${NC}"
+fi
+
+# Test Perl client
+if command -v perl &> /dev/null; then
+    # Make test script executable
+    chmod +x "$PROJECT_ROOT/clients/perl/test_client.pl"
+
+    run_test "Perl" "cd '$PROJECT_ROOT/clients/perl' && perl test_client.pl $SERVER_IP $SERVER_PORT $USERNAME $PASSWORD $MQTT_PORT"
+else
+    echo -e "${YELLOW}⚠ Skipping Perl test (perl not found)${NC}"
+fi
+
+# Summary
+echo ""
+echo "======================================================================"
+echo "TEST SUMMARY"
+echo "======================================================================"
 echo ""
 
-check_server
-
-# ============================================================================
-# CLI Tests
-# ============================================================================
-print_header "Testing CLI Client"
-
-if [ -f "./moustique-cli" ]; then
-    run_test "CLI: Publish to public broker" \
-        "./moustique-cli -h $MOUSTIQUE_HOST -p $MOUSTIQUE_PORT -a pub -t $TEST_TOPIC/cli -m 'Test from CLI'"
-
-    run_test "CLI: Publish with authentication" \
-        "./moustique-cli -h $MOUSTIQUE_HOST -p $MOUSTIQUE_PORT -u $TEST_USER -pwd $TEST_PASS -a pub -t $TEST_TOPIC/cli/auth -m 'Auth test'"
-
-    run_test "CLI: Put value" \
-        "./moustique-cli -h $MOUSTIQUE_HOST -p $MOUSTIQUE_PORT -a put -t $TEST_TOPIC/cli/value -m 'stored_value'"
-
-    run_test "CLI: Version" \
-        "./moustique-cli -a version"
-else
-    print_error "CLI client not found (./moustique-cli). Run 'make cli' to build it."
-fi
-
-# ============================================================================
-# Python Tests
-# ============================================================================
-print_header "Testing Python Client"
-
-if command -v python3 &> /dev/null; then
-    run_test "Python: Public broker publish" \
-        "python3 tests/python_test.py public"
-
-    run_test "Python: Authenticated publish" \
-        "python3 tests/python_test.py auth $TEST_USER $TEST_PASS"
-
-    run_test "Python: PUTVAL" \
-        "python3 tests/python_test.py putval $TEST_USER $TEST_PASS"
-
-    run_test "Python: GETVAL" \
-        "python3 tests/python_test.py getval $TEST_USER $TEST_PASS"
-
-    run_test "Python: SUBSCRIBE/PICKUP" \
-        "python3 tests/python_test.py subscribe $TEST_USER $TEST_PASS"
-else
-    print_error "Python3 not found. Skipping Python tests."
-fi
-
-# ============================================================================
-# JavaScript Tests
-# ============================================================================
-print_header "Testing JavaScript Client"
-
-if command -v node &> /dev/null; then
-    run_test "Node.js: Public broker publish" \
-        "node tests/javascript_test.mjs public"
-
-    run_test "Node.js: Authenticated publish" \
-        "node tests/javascript_test.mjs auth $TEST_USER $TEST_PASS"
-
-    run_test "Node.js: PUTVAL" \
-        "node tests/javascript_test.mjs putval $TEST_USER $TEST_PASS"
-
-    run_test "Node.js: GETVAL" \
-        "node tests/javascript_test.mjs getval $TEST_USER $TEST_PASS"
-
-    run_test "Node.js: SUBSCRIBE/PICKUP" \
-        "node tests/javascript_test.mjs subscribe $TEST_USER $TEST_PASS"
-else
-    print_error "Node.js not found. Skipping JavaScript tests."
-fi
-
-# ============================================================================
-# Go Tests
-# ============================================================================
-print_header "Testing Go Client"
-
-run_test "Go: Public broker publish" \
-    "(cd tests && go run test_go_client.go public $MOUSTIQUE_HOST $MOUSTIQUE_PORT)"
-
-run_test "Go: Authenticated publish" \
-    "(cd tests && go run test_go_client.go auth $MOUSTIQUE_HOST $MOUSTIQUE_PORT $TEST_USER $TEST_PASS)"
-
-run_test "Go: PUTVAL" \
-    "(cd tests && go run test_go_client.go putval $MOUSTIQUE_HOST $MOUSTIQUE_PORT $TEST_USER $TEST_PASS)"
-
-run_test "Go: SUBSCRIBE/PICKUP" \
-    "(cd tests && go run test_go_client.go subscribe $MOUSTIQUE_HOST $MOUSTIQUE_PORT $TEST_USER $TEST_PASS)"
-
-# ============================================================================
-# Perl Tests
-# ============================================================================
-print_header "Testing Perl Client"
-
-if command -v perl &> /dev/null; then
-    run_test "Perl: Public broker publish" \
-        "perl tests/perl_test.pl public $MOUSTIQUE_HOST $MOUSTIQUE_PORT"
-
-    run_test "Perl: Authenticated publish" \
-        "perl tests/perl_test.pl auth $MOUSTIQUE_HOST $MOUSTIQUE_PORT $TEST_USER $TEST_PASS"
-else
-    print_error "Perl not found. Skipping Perl tests."
-fi
-
-# ============================================================================
-# Java Tests (optional - requires Maven/Gradle)
-# ============================================================================
-print_header "Testing Java Client"
-
-if command -v javac &> /dev/null && [ -f "clients/java/src/main/java/moustique/MoustiqueClient.java" ]; then
-    print_info "Java client found but tests require Maven/Gradle setup. Skipping for now."
-    # TODO: Add Java tests when build system is set up
-else
-    print_info "Java not configured. Skipping Java tests."
-fi
-
-# ============================================================================
-# Summary
-# ============================================================================
-print_header "Test Summary"
-
-echo "Total tests run: $TESTS_RUN"
-echo -e "${GREEN}Passed: $TESTS_PASSED${NC}"
-echo -e "${RED}Failed: $TESTS_FAILED${NC}"
-
-if [ $TESTS_FAILED -eq 0 ]; then
+if [ ${#PASSED_TESTS[@]} -gt 0 ]; then
+    echo -e "${GREEN}PASSED (${#PASSED_TESTS[@]}):${NC}"
+    for test in "${PASSED_TESTS[@]}"; do
+        echo -e "  ${GREEN}✓${NC} $test"
+    done
     echo ""
-    print_success "All tests passed! 🎉"
-    exit 0
-else
+fi
+
+if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
+    echo -e "${RED}FAILED (${#FAILED_TESTS[@]}):${NC}"
+    for test in "${FAILED_TESTS[@]}"; do
+        echo -e "  ${RED}✗${NC} $test"
+    done
     echo ""
-    print_error "Some tests failed. Please check the output above."
+fi
+
+TOTAL=$((${#PASSED_TESTS[@]} + ${#FAILED_TESTS[@]}))
+echo "Total: ${#PASSED_TESTS[@]}/$TOTAL tests passed"
+echo "======================================================================"
+echo ""
+
+# Exit with error if any tests failed
+if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
     exit 1
 fi
+
+exit 0

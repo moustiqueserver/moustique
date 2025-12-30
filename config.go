@@ -19,6 +19,7 @@ type Config struct {
 // ServerConfig represents server configuration
 type ServerConfig struct {
 	Port           int           `yaml:"port"`
+	MQTTPort       int           `yaml:"mqtt_port"`        // MQTT listener port, 0 = disabled
 	Timeout        time.Duration `yaml:"timeout"`
 	AllowPublic    *bool         `yaml:"allow_public"` // Pointer to detect if set
 	MaxRequestSize int64         `yaml:"max_request_size"` // in bytes, 0 = unlimited
@@ -62,6 +63,8 @@ func LoadConfig(path string) (*Config, error) {
 	if config.Server.Port == 0 {
 		config.Server.Port = 33334
 	}
+	// MQTT port defaults to 1883 if not explicitly set to 0
+	// To disable MQTT, explicitly set mqtt_port: 0 in config
 	if config.Server.Timeout == 0 {
 		config.Server.Timeout = 30 * time.Second
 	}

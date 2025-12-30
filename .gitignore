@@ -29,6 +29,8 @@ Thumbs.db
 .editorconfig
 .eslintrc*
 .prettierrc*
+.perftest/
+config-test.yaml
 
 # Build artifacts
 node_modules/

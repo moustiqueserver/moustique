@@ -161,6 +161,15 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP, syscall.SIGQUIT)
 
+	// Start MQTT server if configured
+	if config.Server.MQTTPort > 0 {
+		go func() {
+			if err := server.StartMQTT(config.Server.MQTTPort); err != nil {
+				logger.Printf("MQTT server error: %v", err)
+			}
+		}()
+	}
+
 	// Start landing page server on port 80 in goroutine
 	go func() {
 		if err := StartLandingServer(ctx, logger); err != nil {

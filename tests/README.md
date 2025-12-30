@@ -1,262 +1,173 @@
-# Moustique Client Test Suite
+# Moustique Client Tests
 
-Automated tests for all Moustique client libraries.
+This directory contains integration tests for all Moustique client implementations.
 
 ## Overview
 
-This test suite validates that all client implementations (Python, JavaScript, Go, Perl, CLI) can successfully:
-- Connect to the Moustique server
-- Publish messages to public broker
-- Publish messages with authentication
-- Use correct encoding (ROT13 + Base64)
+Each client test validates both **HTTP (polling)** and **MQTT (push)** protocols:
+
+- **Python** (`clients/python/tests/test_client.py`)
+- **JavaScript** (`clients/javascript/tests/test_client.js`)
+- **Go** (`clients/go/test_client.go`)
+- **Java** (`clients/java/src/main/java/moustique/TestClient.java`)
+- **Perl** (`clients/perl/test_client.pl`)
 
 ## Prerequisites
 
-1. **Running Moustique server** on localhost:33334 (or configure via environment variables)
-2. **Test user created** with username `testuser` and password `testpass123` (or configure via environment variables)
+Before running the tests, make sure you have:
 
-### Creating Test User
+1. **Moustique server running** with both HTTP and MQTT ports enabled
+2. **User credentials** configured (or public access enabled)
+3. Required language runtimes installed:
+   - Python 3.7+
+   - Node.js 18+
+   - Go 1.22+
+   - Java 17+ with Maven
+   - Perl 5.10+
+
+## Running All Tests
+
+The easiest way to test all clients is using the master test script:
 
 ```bash
-# Start server
-./moustique
-
-# In another terminal, use superadmin UI or CLI to create user
-# Or via API (example with curl):
-# First, create user via superadmin interface at http://localhost:33334/superadmin
+./tests/test_all_clients.sh [server_ip] [http_port] [username] [password] [mqtt_port]
 ```
 
-## Running Tests
-
-### Quick Start - Run All Tests
+**Examples:**
 
 ```bash
-# Make test script executable
-chmod +x tests/test_all_clients.sh
-
-# Run all tests
+# Using defaults (localhost:33334, demo/demo123, MQTT port 1883)
 ./tests/test_all_clients.sh
+
+# Custom server
+./tests/test_all_clients.sh 192.168.1.100 33334 alice secret123 1883
 ```
 
-### With Custom Configuration
+## Running Individual Client Tests
 
+### Python
 ```bash
-# Set environment variables
-export MOUSTIQUE_HOST="moustique.example.com"
-export MOUSTIQUE_PORT="33334"
-export TEST_USER="myuser"
-export TEST_PASS="mypassword"
-
-# Run tests
-./tests/test_all_clients.sh
+cd clients/python
+python3 tests/test_client.py localhost 33334 demo demo123 1883
 ```
 
-### Individual Client Tests
-
+### JavaScript
 ```bash
-# Python
-python3 tests/python_test.py public
-python3 tests/python_test.py auth testuser testpass123
-
-# JavaScript/Node.js
-node tests/javascript_test.js public
-node tests/javascript_test.js auth testuser testpass123
-
-# Go
-cd tests && go build -o go_test go_test.go
-./go_test public localhost 33334
-./go_test auth localhost 33334 testuser testpass123
-
-# Perl
-perl tests/perl_test.pl public localhost 33334
-perl tests/perl_test.pl auth localhost 33334 testuser testpass123
-
-# CLI
-./moustique-cli -a pub -t /test/cli -m "test"
-./moustique-cli -u testuser -pwd testpass123 -a pub -t /test/cli/auth -m "test"
+cd clients/javascript
+npm install  # First time only
+node tests/test_client.js localhost 33334 demo demo123 1883
 ```
 
-## Test Structure
-
-```
-tests/
-├── README.md                 # This file
-├── test_all_clients.sh      # Main test runner
-├── python_test.py           # Python client test
-├── javascript_test.js       # JavaScript/Node.js client test
-├── go_test.go              # Go client test
-└── perl_test.pl            # Perl client test
-```
-
-## Adding New Tests
-
-To add a new test:
-
-1. Create test file in `tests/` directory
-2. Implement test modes: `public` and `auth`
-3. Return exit code 0 on success, 1 on failure
-4. Add test to `test_all_clients.sh`
-
-### Example Test Template
-
+### Go
 ```bash
-#!/usr/bin/env your-language
-
-# Parse arguments
-mode = args[0]
-host = args[1]
-port = args[2]
-
-if mode == "public":
-    # Test without authentication
-    client = create_client(host, port)
-    client.publish("/test/topic", "message")
-    exit(0)
-
-elif mode == "auth":
-    username = args[3]
-    password = args[4]
-    # Test with authentication
-    client = create_client(host, port, username, password)
-    client.publish("/test/topic", "message")
-    exit(0)
-
-exit(1)  # Failed
+cd clients/go
+go mod tidy  # First time only
+go run test_client.go localhost 33334 demo demo123 1883
 ```
 
-## Continuous Integration
+### Java
+```bash
+cd clients/java
+mvn clean package  # First time only
+mvn exec:java -Dexec.mainClass=moustique.TestClient -Dexec.args="localhost 33334 demo demo123 1883"
+```
 
-### GitHub Actions Example
+### Perl
+```bash
+cd clients/perl
+perl test_client.pl localhost 33334 demo demo123 1883
+```
 
-```yaml
-name: Client Tests
+## What Each Test Does
 
-on: [push, pull_request]
+Each test performs the following operations:
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
+### HTTP Test
+1. Publishes a message
+2. Stores a key-value pair
+3. Subscribes to a topic
+4. Polls for messages (10 seconds)
+5. Verifies callback triggers
 
-      - name: Build Moustique server
-        run: make server
+### MQTT Test
+1. Connects to MQTT broker with authentication
+2. Publishes a message
+3. Stores a key-value pair
+4. Subscribes to a topic
+5. Waits for pushed messages (10 seconds)
+6. Verifies callback triggers
+7. Disconnects cleanly
 
-      - name: Start server
-        run: ./moustique &
+## Expected Output
 
-      - name: Wait for server
-        run: sleep 2
+Successful test output looks like:
 
-      - name: Create test user
-        run: |
-          # TODO: Add user creation via API
+```
+============================================================
+Testing with HTTP protocol
+============================================================
 
-      - name: Run tests
-        run: ./tests/test_all_clients.sh
+=== Moustique Python Client – Multi-tenant Test ===
+Protocol: HTTP
+Server: localhost:33334
+Username: demo
+
+1. Publishing message...
+2. Setting value...
+3. Subscribing to /test/topic...
+   Sending message to trigger callback...
+   Polling for HTTP messages (10 seconds)...
+[10:30:15] MESSAGE → '/test/topic': This message should appear in callback! (HTTP) (from TestRunner-http)
+
+=== HTTP test complete! ===
+
+============================================================
+TEST SUMMARY
+============================================================
+HTTP test: ✓ PASSED
+MQTT test: ✓ PASSED
+============================================================
 ```
 
 ## Troubleshooting
 
-### Server Not Running
+### "MQTT requested but paho-mqtt not installed"
+Install the MQTT library for your language:
+- Python: `pip install paho-mqtt`
+- JavaScript: `npm install mqtt`
+- Go: `go get github.com/eclipse/paho.mqtt.golang`
+- Java: Dependencies in pom.xml
+- Perl: MQTT not currently supported (library limitations). The Perl client uses HTTP polling only and gracefully falls back when MQTT is requested.
 
-```
-✗ Server is not running on localhost:33334
-Please start the server first: ./moustique
-```
+### "Authentication failed"
+- Verify username/password are correct
+- Check server configuration (`allow_public` setting)
+- Review server logs
 
-**Solution:** Start the Moustique server before running tests.
+### "Connection refused"
+- Ensure Moustique server is running
+- Verify HTTP and MQTT ports are correct
+- Check firewall settings
 
-### Authentication Failed
+### Tests timeout
+- Increase wait time in test code
+- Check server is processing messages
+- Verify network connectivity
 
-```
-✗ Python authenticated publish failed: Authentication failed: Invalid username or password
-```
+## Exit Codes
 
-**Solution:** Create test user with correct credentials:
-- Username: `testuser` (or set `TEST_USER`)
-- Password: `testpass123` (or set `TEST_PASS`)
+- `0`: All tests passed
+- `1`: One or more tests failed
 
-### Client Not Found
+## CI/CD Integration
 
-```
-✗ CLI client not found (./moustique-cli). Run 'make cli' to build it.
-```
+Use the test script in your CI pipeline:
 
-**Solution:** Build missing client:
-```bash
-make cli           # For CLI
-make all          # For server and CLI
-pip install -e clients/python   # For Python
-cd clients/javascript && npm install  # For JavaScript
-```
-
-### Port Already in Use
-
-If the default port 33334 is in use:
-
-```bash
-# Start server on different port
-./moustique -port 33335
-
-# Run tests with custom port
-export MOUSTIQUE_PORT="33335"
-./tests/test_all_clients.sh
-```
-
-## Test Coverage
-
-Current test coverage:
-
-- ✅ CLI client
-  - Public broker publish
-  - Authenticated publish
-  - Put value
-  - Version check
-
-- ✅ Python client
-  - Public broker publish
-  - Authenticated publish
-
-- ✅ JavaScript client
-  - Public broker publish
-  - Authenticated publish
-
-- ✅ Go client
-  - Public broker publish
-  - Authenticated publish
-
-- ✅ Perl client
-  - Public broker publish
-  - Authenticated publish
-
-- ⚠️ Java client
-  - Requires Maven/Gradle setup (TODO)
-
-## Future Improvements
-
-- [ ] Add subscribe/pickup tests
-- [ ] Add value storage (putval/getval) tests
-- [ ] Add wildcard subscription tests
-- [ ] Add performance/load tests
-- [ ] Add integration tests with multiple clients
-- [ ] Add Docker-based test environment
-- [ ] Add Java client tests
-- [ ] Add automated user creation in tests
-- [ ] Add test for server restart/reconnection
-
-## Contributing
-
-When adding a new client or modifying existing clients:
-
-1. Update or create corresponding test file
-2. Run full test suite before committing
-3. Ensure all tests pass
-4. Update this README if adding new test types
-
-```bash
-# Before committing
-./tests/test_all_clients.sh
-
-# If all tests pass, you're good to go!
+```yaml
+# GitHub Actions example
+- name: Test Moustique Clients
+  run: |
+    ./moustique &
+    sleep 2
+    ./tests/test_all_clients.sh localhost 33334 testuser testpass 1883
 ```

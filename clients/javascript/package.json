@@ -1,11 +1,11 @@
 {
   "name": "moustique-client",
-  "version": "0.1.1",
-  "description": "Moustique HTTP pub/sub client for JavaScript/Node.js",
+  "version": "0.2.0",
+  "description": "Moustique dual-protocol pub/sub client for JavaScript/Node.js (HTTP + MQTT)",
   "main": "moustique/index.js",
   "private": false,
   "type": "module",
-  "keywords": ["moustique", "pubsub", "realtime", "http", "messaging", "broker"],
+  "keywords": ["moustique", "pubsub", "realtime", "http", "mqtt", "messaging", "broker"],
   "author": {
     "name": "Moustique",
     "email": "support@moustique.xyz"
@@ -25,5 +25,8 @@
   },
   "scripts": {
     "test": "node tests/test_client.js"
+  },
+  "optionalDependencies": {
+    "mqtt": "^5.3.0"
   }
 }

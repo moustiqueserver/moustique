@@ -1,0 +1,17 @@
+server:
+  port: 33336
+  mqtt_port: 1884             # MQTT port for testing, different from default
+  timeout: 30s
+  allow_public: true
+  max_request_size: 10485760  # 10MB in bytes
+database:
+  path: ./data-test
+logging:
+  level: debug
+  file: ''
+security:
+  allowed_peers: []
+  blocked_peers: []
+  max_topic_length: 256
+  max_message_size: 1048576  # 1MB in bytes
+  default_rate_limit: 0      # unlimited for testing

@@ -386,6 +386,22 @@ func (s *Server) AddUser(username, password string) error {
 	return nil
 }
 
+// StartMQTT starts the MQTT server on the specified port
+func (s *Server) StartMQTT(port int) error {
+	if port == 0 {
+		s.logger.Println("MQTT disabled (port not configured)")
+		return nil
+	}
+
+	mqttServer := NewMQTTServer(s.brokerManager, s.userAuth, s.logger)
+	if err := mqttServer.Start(port); err != nil {
+		return fmt.Errorf("failed to start MQTT server: %w", err)
+	}
+
+	s.logger.Printf("MQTT server started on port %d", port)
+	return nil
+}
+
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	// Initialize broker manager with context and create default broker if needed

@@ -34,6 +34,8 @@ type Client struct {
 	LatestSystemPickup       int64  `json:"LatestSystemPickup"`
 	RequestCounter           int    `json:"RequestCounter"`
 	IP                       string `json:"IP"`
+	Type                     string `json:"Type"` // "http" or "mqtt"
+	MQTTClientID             string `json:"MQTTClientID,omitempty"`
 }
 
 // Provider tracks message posters
@@ -96,6 +98,7 @@ type Broker struct {
 	minutePickupCountTimestamp  int64
 	minuteGetvalCountTimestamp  int64
 	messagesProcessed           int64
+	mqttClients                 map[string]chan *Message // MQTT client ID -> message channel
 }
 
 // NewBroker creates a new message broker
@@ -119,6 +122,7 @@ func NewBroker(logger *log.Logger, db *Database, debug bool, fail2banJail string
 		messageQueueTimeout: 5 * time.Minute,
 		posterStatsTimeout:  1 * time.Hour,
 		startedTime:         time.Now().Unix(),
+		mqttClients:         make(map[string]chan *Message),
 	}
 }
 
@@ -146,6 +150,11 @@ func (b *Broker) GetUserLogPath() string {
 
 // Subscribe adds a client subscription to a topic
 func (b *Broker) Subscribe(topic, clientName, ip string) error {
+	return b.SubscribeWithType(topic, clientName, ip, "http", "")
+}
+
+// SubscribeWithType adds a client subscription to a topic with client type
+func (b *Broker) SubscribeWithType(topic, clientName, ip, clientType, mqttClientID string) error {
 	if clientName == "" {
 		return fmt.Errorf("client name cannot be empty")
 	}
@@ -165,11 +174,24 @@ func (b *Broker) Subscribe(topic, clientName, ip string) error {
 			LatestSystemPickup:       now,
 			RequestCounter:           0,
 			IP:                       ip,
+			Type:                     clientType,
+			MQTTClientID:             mqttClientID,
 		}
 		if b.debug {
-			b.logger.Printf("New client: %s from IP: %s", clientName, ip)
+			b.logger.Printf("New %s client: %s from IP: %s", clientType, clientName, ip)
 		}
-		b.LogUser("New client: %s from IP: %s", clientName, ip)
+		b.LogUser("New %s client: %s from IP: %s", clientType, clientName, ip)
+	} else {
+		// Update existing client
+		existingClient := b.clients[clientName]
+
+		// Update MQTT client ID if provided (may coexist with HTTP)
+		if mqttClientID != "" {
+			existingClient.MQTTClientID = mqttClientID
+			existingClient.Type = "mqtt" // Just for stats/tracking
+		}
+
+		existingClient.IP = ip
 	}
 
 	if !contains(b.subscriptions[topic], clientName) {
@@ -250,6 +272,28 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 		if clients, ok := b.subscriptions[wildcardTopic]; ok {
 
 			for _, clientName := range clients {
+				client := b.clients[clientName]
+
+				// Try to push to MQTT clients if they have an active channel
+				if client != nil && client.MQTTClientID != "" {
+					if msgChan, exists := b.mqttClients[client.MQTTClientID]; exists {
+						// Try non-blocking send to MQTT client
+						select {
+						case msgChan <- msg:
+							// Successfully pushed to MQTT client
+							if b.debug {
+								b.logger.Printf("Pushed message to MQTT client: %s (channel %s)", clientName, client.MQTTClientID)
+							}
+						default:
+							// Channel full or closed
+							if b.debug {
+								b.logger.Printf("MQTT push failed for %s (channel full or closed)", clientName)
+							}
+						}
+					}
+				}
+
+				// ALWAYS queue for HTTP pickup (so HTTP clients can coexist with MQTT)
 				if b.messageQueue[clientName] == nil {
 					b.messageQueue[clientName] = make(map[string][]*Message)
 				}
@@ -834,4 +878,45 @@ func replaceAt(slice []string, index int, value string) []string {
 		result[index] = value
 	}
 	return result
+}
+
+// RegisterMQTTClient registers an MQTT client and returns its message channel
+func (b *Broker) RegisterMQTTClient(clientID string) chan *Message {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Create buffered channel for messages (100 message buffer)
+	msgChan := make(chan *Message, 100)
+	b.mqttClients[clientID] = msgChan
+
+	if b.debug {
+		b.logger.Printf("Registered MQTT client: %s", clientID)
+	}
+
+	return msgChan
+}
+
+// UnregisterMQTTClient removes an MQTT client
+func (b *Broker) UnregisterMQTTClient(clientID, clientName string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if msgChan, exists := b.mqttClients[clientID]; exists {
+		close(msgChan)
+		delete(b.mqttClients, clientID)
+
+		if b.debug {
+			b.logger.Printf("Unregistered MQTT client: %s", clientID)
+		}
+	}
+
+	// Clear MQTT client ID from Client object
+	if client, exists := b.clients[clientName]; exists {
+		if client.MQTTClientID == clientID {
+			client.MQTTClientID = ""
+			if b.debug {
+				b.logger.Printf("Cleared MQTT client ID from %s (will use queue/HTTP)", clientName)
+			}
+		}
+	}
 }

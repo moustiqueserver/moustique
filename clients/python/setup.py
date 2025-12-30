@@ -5,10 +5,10 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="moustique_client",
-    version="0.1.1",
+    version="0.2.0",
     author="Moustique",
     author_email="mulf@protonmail.com",
-    description="Python client for Moustique messaging server",
+    description="Python client for Moustique messaging server (HTTP + MQTT)",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/moustiqueserver/moustique",
@@ -30,8 +30,9 @@ setup(
     python_requires='>=3.7',
     install_requires=[
         "requests>=2.25.0",
+        "paho-mqtt>=1.6.0",
     ],
-    keywords="moustique pubsub messaging realtime",
+    keywords="moustique pubsub messaging realtime mqtt http broker",
     project_urls={
         "Bug Reports": "https://github.com/moustiqueserver/moustique/issues",
         "Source": "https://github.com/moustiqueserver/moustique",

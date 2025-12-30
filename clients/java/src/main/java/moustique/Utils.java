@@ -21,18 +21,26 @@ public class Utils {
 
     public static String enc(String text) {
         if (text == null || text.isEmpty()) return "";
-        String b64 = Base64.getEncoder().encodeToString(text.getBytes());
-        return rotate(b64,
+        // Must match server encoding: ROT13 first, then Base64
+        String rot13 = rotate(text,
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
                 "NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm");
+        return Base64.getEncoder().encodeToString(rot13.getBytes());
     }
 
     public static String dec(String encoded) {
         if (encoded == null || encoded.isEmpty()) return "";
-        String rotated = rotate(encoded,
-                "NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm",
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
-        return new String(Base64.getDecoder().decode(rotated));
+        try {
+            // Reverse of encode: Base64 decode first, then ROT13
+            byte[] decoded = Base64.getDecoder().decode(encoded);
+            String b64Text = new String(decoded);
+            return rotate(b64Text,
+                    "NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm",
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+        } catch (IllegalArgumentException e) {
+            // Invalid base64 - return empty string
+            return "";
+        }
     }
 
     public static String getNiceDateTime() {

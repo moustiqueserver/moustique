@@ -185,7 +185,29 @@ func (c *Client) Pickup() error {
 		return nil
 	}
 
+	// Handle system messages first
+	if systemMsgs, ok := data["/server/action/resubscribe"]; ok && len(systemMsgs) > 0 {
+		fmt.Println("⚠️  Server restarted - re-subscribing to all topics...")
+		// Re-subscribe to all topics
+		for topic := range c.callbacks {
+			payload := c.addAuth(url.Values{
+				"topic":  {encode(topic)},
+				"client": {encode(c.ClientName)},
+			})
+			if resp, err := c.HTTPClient.PostForm(c.BaseURL+"/SUBSCRIBE", payload); err == nil {
+				resp.Body.Close()
+				fmt.Printf("✓ Re-subscribed to %s\n", topic)
+			}
+		}
+	}
+
+	// Deliver regular messages to callbacks
 	for topic, msgs := range data {
+		// Skip system messages
+		if topic == "/server/action/resubscribe" {
+			continue
+		}
+
 		for _, msg := range msgs {
 			callbacks := c.callbacks[topic]
 			for _, cb := range callbacks {

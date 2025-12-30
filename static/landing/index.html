@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Moustique - Simple, Fast Message Broker</title>
+    <title>Moustique - Dual Protocol Message Broker (MQTT + HTTP)</title>
     <style>
         * {
             margin: 0;
@@ -354,8 +354,9 @@
                 <img src="moustique_logo.png" alt="Moustique Logo" class="logo-image">
                 <h1 class="logo">Moustique</h1>
             </div>
-            <p class="tagline">A lightweight, fast message broker that just works</p>
-            <p>Simple pub/sub messaging for Python, JavaScript, Go, Perl, and more</p>
+            <p class="tagline">Dual Protocol Message Broker — MQTT + HTTP</p>
+            <p>Real-time MQTT push <strong>or</strong> HTTP polling — you choose what fits your needs</p>
+            <p style="margin-top: 15px; opacity: 0.9;">Compatible with mosquitto, standard MQTT clients, and REST APIs</p>
             <div class="cta-buttons">
                 <a href="#quickstart" class="btn btn-primary" onclick="event.preventDefault(); document.getElementById('quickstart').scrollIntoView({ behavior: 'smooth' });">Get Started in 30 Seconds</a>
                 <a href="#" class="btn btn-secondary" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Try Cloud Service (Free)</a>
@@ -369,30 +370,55 @@
             <h2 class="section-title">Get Started in 30 Seconds</h2>
 
             <div class="code-tabs">
-                <button class="code-tab active" onclick="showTab('python')">Python</button>
+                <button class="code-tab active" onclick="showTab('mqtt')">MQTT</button>
+                <button class="code-tab" onclick="showTab('python')">Python</button>
                 <button class="code-tab" onclick="showTab('javascript')">JavaScript</button>
                 <button class="code-tab" onclick="showTab('go')">Go</button>
-                <button class="code-tab" onclick="showTab('cli')">CLI</button>
+                <button class="code-tab" onclick="showTab('cli')">HTTP/CLI</button>
             </div>
 
-            <div id="python" class="code-content active">
-<pre><span class="code-comment"># Install</span>
-pip install moustique
+            <div id="mqtt" class="code-content active">
+<pre><span class="code-comment"># Install mosquitto tools</span>
+sudo apt install mosquitto-clients  <span class="code-comment"># Linux</span>
+brew install mosquitto               <span class="code-comment"># macOS</span>
 
-<span class="code-comment"># Publish a message</span>
+<span class="code-comment"># Subscribe to messages (Terminal 1)</span>
+mosquitto_sub -h localhost -p <span class="code-string">1883</span> \
+  -t <span class="code-string">"sensors/#"</span> \
+  -u demo -P demo123
+
+<span class="code-comment"># Publish a message (Terminal 2)</span>
+mosquitto_pub -h localhost -p <span class="code-string">1883</span> \
+  -t <span class="code-string">"sensors/temperature"</span> \
+  -m <span class="code-string">"23.5°C"</span> \
+  -u demo -P demo123
+
+<span class="code-comment"># Messages delivered instantly (no polling needed)!</span>
+<span class="code-comment"># Compatible with any MQTT client or library</span></pre>
+            </div>
+
+            <div id="python" class="code-content">
+<pre><span class="code-comment"># Install</span>
+pip install moustique paho-mqtt
+
+<span class="code-comment"># Create client with MQTT (real-time push)</span>
 <span class="code-keyword">from</span> moustique <span class="code-keyword">import</span> Moustique
 
-client = Moustique(<span class="code-string">"localhost"</span>, <span class="code-string">"33334"</span>, <span class="code-string">"my-app"</span>)
-<span class="code-comment"># Or use cloud: Moustique("cloud.moustique.xyz", "80", "my-app")</span>
-client.publish(<span class="code-string">"/sensors/temperature"</span>, <span class="code-string">"23.5"</span>)
+client = Moustique(
+    ip=<span class="code-string">"localhost"</span>, port=<span class="code-string">"33334"</span>,
+    username=<span class="code-string">"demo"</span>, password=<span class="code-string">"demo123"</span>,
+    use_mqtt=<span class="code-keyword">True</span>  <span class="code-comment"># Enable MQTT for instant delivery</span>
+)
 
-<span class="code-comment"># Subscribe to messages</span>
+<span class="code-comment"># Subscribe to messages (delivered instantly via MQTT)</span>
 <span class="code-keyword">def</span> <span class="code-function">on_message</span>(topic, message, from_name):
-    <span class="code-function">print</span>(<span class="code-string">f"Got: {message}"</span>)
+    <span class="code-function">print</span>(<span class="code-string">f"📨 {topic}: {message}"</span>)
 
 client.subscribe(<span class="code-string">"/sensors/#"</span>, on_message)
+client.publish(<span class="code-string">"/sensors/temp"</span>, <span class="code-string">"23.5°C"</span>)
+
 <span class="code-keyword">while</span> <span class="code-keyword">True</span>:
-    client.pickup()  <span class="code-comment"># Poll for messages</span>
+    client.tick()  <span class="code-comment"># Messages arrive automatically with MQTT</span>
     time.sleep(<span class="code-string">1</span>)</pre>
             </div>
 
@@ -474,34 +500,34 @@ chmod +x moustique-cli
             <h2 class="section-title">Why Moustique?</h2>
             <div class="feature-grid">
                 <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3 class="feature-title">Blazing Fast</h3>
-                    <p class="feature-desc">Written in Go for maximum performance. Handle thousands of messages per second with minimal overhead.</p>
+                    <div class="feature-icon">🔄</div>
+                    <h3 class="feature-title">Dual Protocol Support</h3>
+                    <p class="feature-desc">Native <strong>MQTT</strong> for real-time push messaging + <strong>HTTP</strong> for polling. Choose what fits your needs or use both!</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">🎯</div>
-                    <h3 class="feature-title">Dead Simple</h3>
-                    <p class="feature-desc">No complex configuration. No dependencies. Install and start using in under a minute.</p>
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">Real-Time Push</h3>
+                    <p class="feature-desc">MQTT delivers messages instantly with &lt;5ms latency. No polling overhead, no battery drain. Works with mosquitto and standard MQTT tools.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🌐</div>
-                    <h3 class="feature-title">Multi-Language</h3>
-                    <p class="feature-desc">Client libraries for Python, JavaScript, Go, Perl. HTTP-based protocol works with any language.</p>
+                    <h3 class="feature-title">Universal HTTP Fallback</h3>
+                    <p class="feature-desc">HTTP polling works everywhere — through firewalls, proxies, and restrictive networks. Simple REST API compatible with any language.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🔒</div>
                     <h3 class="feature-title">Secure & Multi-Tenant</h3>
-                    <p class="feature-desc">Built-in authentication, user isolation, and rate limiting. Perfect for shared environments.</p>
+                    <p class="feature-desc">Built-in authentication, isolated brokers per user, and rate limiting. Perfect for SaaS and shared environments.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📊</div>
                     <h3 class="feature-title">Beautiful Admin UI</h3>
-                    <p class="feature-desc">Monitor topics, clients, and statistics in real-time with our intuitive web interface.</p>
+                    <p class="feature-desc">Monitor topics, clients, and statistics in real-time. Track MQTT and HTTP clients separately with our intuitive web interface.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">💾</div>
-                    <h3 class="feature-title">Persistent Storage</h3>
-                    <p class="feature-desc">SQLite-backed message queues and key-value storage. Never lose important messages.</p>
+                    <div class="feature-icon">🚀</div>
+                    <h3 class="feature-title">Blazing Fast & Lightweight</h3>
+                    <p class="feature-desc">Written in Go for maximum performance. Handles thousands of concurrent connections with ~20MB RAM usage.</p>
                 </div>
             </div>
         </div>

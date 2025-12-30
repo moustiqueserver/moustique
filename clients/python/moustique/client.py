@@ -1,6 +1,7 @@
 """
-Moustique Python Client - Multi-tenant version (Fixed)
+Moustique Python Client - Multi-tenant version with MQTT support
 Supports optional username/password authentication
+Supports both HTTP (polling) and MQTT (push) protocols
 """
 
 import requests
@@ -8,6 +9,13 @@ import base64
 import codecs
 import json
 from typing import Callable, Optional, Dict, Any, List
+
+try:
+    import paho.mqtt.client as mqtt_client
+    MQTT_AVAILABLE = True
+except ImportError:
+    MQTT_AVAILABLE = False
+    mqtt_client = None
 
 def rot13(text: str) -> str:
     """Apply ROT13 cipher"""
@@ -37,19 +45,21 @@ def decode_rot13_base64(encoded: str) -> str:
         return encoded
 
 class Moustique:
-    def __init__(self, ip: str, port: str, client_name: str, 
-                 username: Optional[str] = None, password: Optional[str] = None, 
-                 timeout: int = 5):
+    def __init__(self, ip: str, port: str, client_name: str,
+                 username: Optional[str] = None, password: Optional[str] = None,
+                 timeout: int = 5, use_mqtt: bool = False, mqtt_port: int = 1883):
         """
         Initialize Moustique client
-        
+
         Args:
             ip: Server IP address
-            port: Server port
+            port: Server port (HTTP)
             client_name: Unique client identifier
             username: Username for authentication (optional if public access enabled)
             password: Password for authentication (optional if public access enabled)
             timeout: Request timeout in seconds
+            use_mqtt: Use MQTT protocol instead of HTTP polling (requires paho-mqtt)
+            mqtt_port: MQTT server port (default: 1883)
         """
         self.ip = ip
         self.port = port
@@ -60,6 +70,19 @@ class Moustique:
         self.base_url = f"http://{ip}:{port}"
         self.callbacks = {}
         self.session = requests.Session()  # Reuse connections
+
+        # MQTT support
+        self.use_mqtt = use_mqtt and MQTT_AVAILABLE
+        self.mqtt_port = mqtt_port
+        self.mqtt_client = None
+        self.mqtt_connected = False
+
+        if use_mqtt and not MQTT_AVAILABLE:
+            print("Warning: MQTT requested but paho-mqtt not installed. Falling back to HTTP.")
+            print("Install with: pip install paho-mqtt")
+
+        if self.use_mqtt:
+            self._init_mqtt()
         
     def _make_request(self, endpoint: str, params: Dict[str, str]) -> Any:
         """Make HTTP request with optional authentication"""
@@ -153,8 +176,17 @@ class Moustique:
         # Handle both old format (list) and new format (dict of topic: [messages])
         if result:
             if isinstance(result, dict):
+                # Check for system message: server restart
+                if '/server/action/resubscribe' in result:
+                    print("⚠️  Server restarted - re-subscribing to all topics...")
+                    self.resubscribe()
+
                 # New format: {"/topic1": [msg1, msg2], "/topic2": [msg3]}
                 for topic, messages in result.items():
+                    # Skip system messages
+                    if topic == '/server/action/resubscribe':
+                        continue
+
                     if isinstance(messages, list):
                         for msg in messages:
                             topic_name = msg.get('topic', topic)
@@ -198,14 +230,119 @@ class Moustique:
     def resubscribe(self) -> None:
         """Resubscribe to all topics"""
         for topic in list(self.callbacks.keys()):
-            params = {
-                'topic': topic,
-                'client': self.client_name
-            }
+            if self.use_mqtt and self.mqtt_connected:
+                # MQTT resubscribe
+                self.mqtt_client.subscribe(topic)
+            else:
+                # HTTP resubscribe
+                params = {
+                    'topic': topic,
+                    'client': self.client_name
+                }
+                try:
+                    self._make_request('SUBSCRIBE', params)
+                except Exception as e:
+                    print(f"Failed to resubscribe to '{topic}': {e}")
+
+    def _init_mqtt(self) -> None:
+        """Initialize MQTT client"""
+        if not MQTT_AVAILABLE:
+            return
+
+        self.mqtt_client = mqtt_client.Client(client_id=self.client_name)
+
+        # Set authentication if provided
+        if self.username and self.password:
+            self.mqtt_client.username_pw_set(self.username, self.password)
+
+        # Set callbacks
+        self.mqtt_client.on_connect = self._on_mqtt_connect
+        self.mqtt_client.on_message = self._on_mqtt_message
+        self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
+
+        # Connect
+        try:
+            self.mqtt_client.connect(self.ip, self.mqtt_port, 60)
+            self.mqtt_client.loop_start()
+        except Exception as e:
+            print(f"MQTT connection failed: {e}")
+            self.use_mqtt = False
+
+    def _on_mqtt_connect(self, client, userdata, flags, rc):
+        """MQTT connect callback"""
+        if rc == 0:
+            self.mqtt_connected = True
+            print(f"✓ Connected to MQTT broker at {self.ip}:{self.mqtt_port}")
+            # Resubscribe to all topics
+            for topic in self.callbacks.keys():
+                self.mqtt_client.subscribe(topic)
+                print(f"✓ Subscribed to {topic} via MQTT")
+        else:
+            print(f"MQTT connection failed with code {rc}")
+            self.mqtt_connected = False
+
+    def _on_mqtt_disconnect(self, client, userdata, rc):
+        """MQTT disconnect callback"""
+        self.mqtt_connected = False
+        if rc != 0:
+            print(f"⚠️  Unexpected MQTT disconnection (code {rc})")
+
+    def _on_mqtt_message(self, client, userdata, msg):
+        """MQTT message callback"""
+        try:
+            payload_str = msg.payload.decode('utf-8')
+
+            # Try to parse as JSON first (for compatibility)
+            # If it fails, treat as plaintext (standard MQTT)
             try:
-                self._make_request('SUBSCRIBE', params)
-            except Exception as e:
-                print(f"Failed to resubscribe to '{topic}': {e}")
+                payload = json.loads(payload_str)
+                topic = payload.get('topic', msg.topic)
+                message = payload.get('message', '')
+                from_name = payload.get('from', '')
+            except (json.JSONDecodeError, ValueError):
+                # Standard MQTT: plaintext payload
+                topic = msg.topic
+                message = payload_str
+                from_name = ''
+
+            # Find matching callback
+            for subscribed_topic, callback in self.callbacks.items():
+                # Simple wildcard matching
+                if self._topic_matches(subscribed_topic, topic):
+                    try:
+                        callback(topic, message, from_name)
+                    except Exception as e:
+                        print(f"Error in callback for topic '{topic}': {e}")
+        except Exception as e:
+            print(f"Error processing MQTT message: {e}")
+
+    def _topic_matches(self, pattern: str, topic: str) -> bool:
+        """Check if topic matches subscription pattern (MQTT wildcards)"""
+        # Convert pattern to regex-like matching
+        pattern_parts = pattern.split('/')
+        topic_parts = topic.split('/')
+
+        if len(pattern_parts) > len(topic_parts) and pattern_parts[-1] != '#':
+            return False
+
+        for i, pattern_part in enumerate(pattern_parts):
+            if pattern_part == '#':
+                return True  # Match everything after
+            if i >= len(topic_parts):
+                return False
+            if pattern_part == '+':
+                continue  # Match single level
+            if pattern_part != topic_parts[i]:
+                return False
+
+        return len(pattern_parts) == len(topic_parts) or pattern_parts[-1] == '#'
+
+    def disconnect(self) -> None:
+        """Disconnect MQTT client"""
+        if self.mqtt_client and self.mqtt_connected:
+            self.mqtt_client.loop_stop()
+            self.mqtt_client.disconnect()
+            self.mqtt_connected = False
 
 
 # Helper functions for server information

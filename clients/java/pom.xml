@@ -6,9 +6,9 @@
 
     <groupId>com.moustique</groupId>
     <artifactId>moustique-client</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <name>Moustique Java Client</name>
-    <description>Lightweight HTTP pub/sub client for Moustique server</description>
+    <description>Lightweight dual-protocol pub/sub client for Moustique server (HTTP + MQTT)</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -17,7 +17,19 @@
     </properties>
 
     <dependencies>
-        <!-- Inga externa dependencies – använder Java 11+ inbyggd HttpClient -->
+        <!-- Gson for JSON parsing -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.10.1</version>
+        </dependency>
+        <!-- Eclipse Paho MQTT client (optional) -->
+        <dependency>
+            <groupId>org.eclipse.paho</groupId>
+            <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+            <version>1.2.5</version>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>

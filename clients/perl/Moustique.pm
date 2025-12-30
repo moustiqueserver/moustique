@@ -5,10 +5,23 @@ use warnings;
 no warnings qw( experimental::smartmatch );
 use Sys::Hostname;
 use JSON;
-use LWP::UserAgent; 
+use LWP::UserAgent;
 use MIME::Base64;
 use Data::Dumper;
 use POSIX qw(getpid);
+
+# Optional MQTT support
+# Note: Net::MQTT::Simple has limitations - it requires blocking event loop
+# For production MQTT use in Perl, consider Net::MQTT or AnyEvent::MQTT
+# For now, MQTT is disabled in Perl client - use HTTP instead
+my $MQTT_AVAILABLE = 0;  # Disabled due to Net::MQTT::Simple limitations
+# eval {
+#     require Net::MQTT::Simple;
+#     $MQTT_AVAILABLE = 1;
+# };
+if (!$MQTT_AVAILABLE) {
+    # MQTT not available, will use HTTP only
+}
 
 my $gua = LWP::UserAgent->new(
         timeout       => 15,
@@ -47,6 +60,18 @@ sub new {
     $self->{username} = $params{username} // $GLOBAL_USERNAME;
     $self->{password} = $params{password} // $GLOBAL_PASSWORD;
 
+    # MQTT support
+    $self->{use_mqtt} = $params{use_mqtt} && $MQTT_AVAILABLE;
+    $self->{mqtt_port} = $params{mqtt_port} || 1883;
+    $self->{mqtt_client} = undef;
+    $self->{mqtt_connected} = 0;
+
+    if ($params{use_mqtt} && !$MQTT_AVAILABLE) {
+        warn "MQTT requested but not supported in Perl client (library limitations). Falling back to HTTP.\n";
+        warn "Note: Net::MQTT::Simple requires blocking event loop incompatible with tick() pattern.\n";
+        warn "For production MQTT, consider using other Moustique clients (Python, JavaScript, Go, Java).\n";
+    }
+
     $self->{callbacks}={};
     #    $self->{consumers}={};
     $self->{system_callbacks}={};
@@ -56,17 +81,19 @@ sub new {
         agent         => "Moustique/2.0",
     );
     $self->initialize();
+
+    if ($self->{use_mqtt}) {
+        $self->_init_mqtt();
+    }
+
     return $self;
 }
 
 sub initialize {
   my $self = shift;
   $self->{server_ip}=$server_ip;
+  $self->{server_url}="http://" . $server_ip;
   $self->{server_port}=$server_port;
-  #  my %callbacks = ();
-  #  my %system_callbacks = ();
-  #$system_callbacks{"/server/action/resubscribe"}=\&{ sub { resubscribe() } };
-  #$self->{system_callbacks}{"/server/action/resubscribe"}=\&resubscribe;
   $self->{system_callbacks}{"/server/action/resubscribe"}=sub { $self->resubscribe(@_) };
 }
 
@@ -84,7 +111,7 @@ sub publish {
   my $retries = 0;
   my $mua      = $self->{ua};
   my ( $package, $filename, $line, $subroutine ) = caller(1);
-  my $post_url=$self->{server_ip} . ":" . $self->{server_port} . "/POST";
+  my $post_url=$self->{server_url} . ":" . $self->{server_port} . "/POST";
 
   my $form = $self->add_auth({
     topic => enc($topic),
@@ -94,9 +121,9 @@ sub publish {
     from => enc($from)
   });
 
-  my $response = $mua->post( "http://" . $post_url, $form);
+  my $response = $mua->post( $post_url, $form);
   while(!$response->is_success && $retries < $POST_RETRIES) {
-    $response = $mua->post( "http://" . $post_url, $form);
+    $response = $mua->post( $post_url, $form);
     $retries+=1;
   }
   unless($response->is_success) {
@@ -106,14 +133,16 @@ sub publish {
 }
 
 # Not threaded, class sub
+# Usage: publish_nothread($ip, $port, $topic, $message, $from, $username, $password, $client_name)
 sub publish_nothread {
-  my ($ip, $port, $topic, $message, $from, $username, $password) = @_;
+  my ($ip, $port, $topic, $message, $from, $username, $password, $client_name) = @_;
   my $retries = 0;
   my $post_url=$ip . ":" . $port . "/POST";
 
   # Use provided credentials, fall back to globals, or use undef for public
   $username = $GLOBAL_USERNAME unless defined $username;
   $password = $GLOBAL_PASSWORD unless defined $password;
+  $client_name = $name unless defined $client_name;  # Fall back to global if not provided
 
   my $form = {
     topic => enc($topic),
@@ -142,13 +171,15 @@ sub publish_nothread {
 }
 #
 # Not threaded, class sub
+# Usage: publish_nothread_put($ip, $port, $topic, $message, $from, $username, $password, $client_name)
 sub publish_nothread_put {
-  my ($ip, $port, $topic, $message, $from, $username, $password) = @_;
+  my ($ip, $port, $topic, $message, $from, $username, $password, $client_name) = @_;
   my $post_url=$ip . ":" . $port . "/PUTVAL";
 
   # Use provided credentials, fall back to globals, or use undef for public
   $username = $GLOBAL_USERNAME unless defined $username;
   $password = $GLOBAL_PASSWORD unless defined $password;
+  $client_name = $name unless defined $client_name;  # Fall back to global if not provided
 
   my $form = {
     valname => enc($topic),
@@ -167,17 +198,10 @@ sub publish_nothread_put {
   $gua->put( "http://" . $post_url, $form);
 }
 
-#Consumer can be one Scene out of x scenes using the same Moustique-client. To stop each scene from ticking every second causing x ticks a second, the consumers are put in a hash and the tick-sub returns x*1 so that each consumer sleeps x seconds between pickups, resulting in 1 tick per second in total.
 sub subscribe {
   my ($self, $topic, $callback, $consumer) = @_;
-  #my $ua      = LWP::UserAgent->new(timeout=>5);
-  my $form = $self->add_auth({
-    topic => enc($topic),
-    client => enc($self->{name})
-  });
 
-  my $response = $gua->post( $server_url.":".$server_port ."/SUBSCRIBE", $form );
-  warn ("$self->{name} subscrbar pa $topic");
+  # Store callback
   my %callbacks= %{ $self->{callbacks} };
   unless($callbacks{$topic}) {
     $callbacks{$topic} = ();
@@ -186,10 +210,69 @@ sub subscribe {
   foreach my $cb (@{$callbacks{$topic}}) {
     $exists=1 if($cb == $callback);
     print ("Hittade samma callback $cb for amnet $topic!\n") if($cb == $callback);
-
   }
   push(@{$callbacks{$topic}}, $callback) unless $exists;
   $self->{callbacks}=\%callbacks;
+
+  # MQTT subscription
+  if ($self->{use_mqtt} && $self->{mqtt_connected}) {
+    eval {
+      # Store the subscription for tick() processing
+      $self->{mqtt_subscriptions}{$topic} = 1;
+
+      # Subscribe with callback
+      $self->{mqtt_client}->subscribe($topic, sub {
+        my ($topic_received, $message) = @_;
+        my $msg_topic = $topic_received;
+        my $msg_text = $message;
+        my $msg_from = '';
+
+        # Try to parse as JSON first (for compatibility)
+        # If it fails, treat as plaintext (standard MQTT)
+        eval {
+          my $msg_obj = decode_json($message);
+          if (ref $msg_obj eq 'HASH' && $msg_obj->{message}) {
+            $msg_topic = $msg_obj->{topic} || $topic_received;
+            $msg_text = $msg_obj->{message};
+            $msg_from = $msg_obj->{from} || '';
+          }
+        };
+        # If JSON parse fails, already set to plaintext above
+
+        # Find matching callbacks
+        my %callbacks = %{ $self->{callbacks} };
+        foreach my $subscribed_topic (keys %callbacks) {
+          if ($self->_topic_matches($subscribed_topic, $msg_topic)) {
+            my @topic_callbacks = @{$callbacks{$subscribed_topic} || []};
+            foreach my $callback (@topic_callbacks) {
+              eval {
+                $callback->($msg_topic, $msg_text, $msg_from);
+              };
+              if ($@) {
+                warn "Error in callback for topic '$topic_received': $@\n";
+              }
+            }
+          }
+        }
+      });
+
+      print "✓ Subscribed to $topic via MQTT\n";
+      return;
+    };
+    if ($@) {
+      warn "MQTT subscribe failed, falling back to HTTP: $@\n";
+      # Fall through to HTTP subscription
+    }
+  }
+
+  # HTTP subscription
+  my $form = $self->add_auth({
+    topic => enc($topic),
+    client => enc($self->{name})
+  });
+
+  my $response = $gua->post( $self->{server_url}.":".$self->{server_port} ."/SUBSCRIBE", $form );
+  warn ("$self->{name} subscrbar pa $topic");
 }
 
 # Calls subscribe on the server for all subscriptions we have.
@@ -203,24 +286,69 @@ sub resubscribe {
   publish_nothread("localhost", "33334", "/mushroom/logs/moustique_lib/DEBUG", "$self->{name} Resubscribing all subscriptions", $self->{name}, $self->{username}, $self->{password}) if scalar @subs > 0;
   foreach my $topic (@subs) {
      print("Resubscribing $topic " . $self->{name} . "\n");
-     my $form = $self->add_auth({
-       topic => enc($topic),
-       client => enc($self->{name})
-     });
-     my $response = $gua->post($server_url.":".$server_port ."/SUBSCRIBE" , $form );
+
+     if ($self->{use_mqtt} && $self->{mqtt_connected}) {
+       # MQTT resubscribe
+       eval {
+         # Re-subscribe with the same pattern as subscribe()
+         $self->{mqtt_subscriptions}{$topic} = 1;
+
+         $self->{mqtt_client}->subscribe($topic, sub {
+           my ($topic_received, $message) = @_;
+           my $msg_topic = $topic_received;
+           my $msg_text = $message;
+           my $msg_from = '';
+
+           eval {
+             my $msg_obj = decode_json($message);
+             if (ref $msg_obj eq 'HASH' && $msg_obj->{message}) {
+               $msg_topic = $msg_obj->{topic} || $topic_received;
+               $msg_text = $msg_obj->{message};
+               $msg_from = $msg_obj->{from} || '';
+             }
+           };
+
+           my %callbacks = %{ $self->{callbacks} };
+           foreach my $subscribed_topic (keys %callbacks) {
+             if ($self->_topic_matches($subscribed_topic, $msg_topic)) {
+               my @topic_callbacks = @{$callbacks{$subscribed_topic} || []};
+               foreach my $callback (@topic_callbacks) {
+                 eval { $callback->($msg_topic, $msg_text, $msg_from); };
+                 warn "Error in callback for topic '$topic_received': $@\n" if $@;
+               }
+             }
+           }
+         });
+
+         print "✓ Re-subscribed to $topic via MQTT\n";
+       };
+       if ($@) {
+         warn "Failed to resubscribe to '$topic' via MQTT: $@\n";
+       }
+     } else {
+       # HTTP resubscribe
+       my $form = $self->add_auth({
+         topic => enc($topic),
+         client => enc($self->{name})
+       });
+       my $response = $gua->post($self->{server_url}.":".$self->{server_port} ."/SUBSCRIBE" , $form );
+     }
   }
   publish_nothread("localhost", "33334", "/mushroom/logs/moustique_lib/DEBUG", "$self->{name} Resubscribed all subscriptions", $self->{name}, $self->{username}, $self->{password});
 }
 
 sub tick {
   my ($self, $consumer) = @_;
+
+  # HTTP polling (MQTT not supported in Perl client)
   $self->pickup();
+
   #  return scalar keys %{ $self->{consumers} } || 1;
   return 1;
 }
 
 sub getval {
-  my ($ip, $port, $valname, $username, $password) = @_;
+  my ($ip, $port, $valname, $username, $password, $client_name) = @_;
   #my $ua      = LWP::UserAgent->new(timeout=>5);
   my $retries = 0;
   my $post_url="http://" . $ip . ":" . $port . "/GETVAL";
@@ -230,9 +358,10 @@ sub getval {
   # Use provided credentials, fall back to globals, or use undef for public
   $username = $GLOBAL_USERNAME unless defined $username;
   $password = $GLOBAL_PASSWORD unless defined $password;
+  $client_name = $name unless defined $client_name;  # Fall back to global if not provided
 
   my %form;
-  $form{'client'}=enc($name);
+  $form{'client'}=enc($client_name);
   $form{'topic'}=enc($valname);
 
   # Add auth if credentials are available
@@ -264,7 +393,7 @@ sub get_val {
   my $retries = 0;
 
   my $form = $self->add_auth({
-    client => enc($name),
+    client => enc($self->{name}),  # Use instance variable instead of global
     topic => enc($valname)
   });
 
@@ -284,7 +413,7 @@ sub get_val {
 }
 
 sub get_vals_by_regex {
-  my ($ip, $port, $regex, $username, $password) = @_;
+  my ($ip, $port, $regex, $username, $password, $client_name) = @_;
   #my $ua      = LWP::UserAgent->new(timeout=>5);
   my $post_url="http://" . $ip . ":" . $port . "/GETVALSBYREGEX";
   my $matched;
@@ -293,9 +422,10 @@ sub get_vals_by_regex {
   # Use provided credentials, fall back to globals, or use undef for public
   $username = $GLOBAL_USERNAME unless defined $username;
   $password = $GLOBAL_PASSWORD unless defined $password;
+  $client_name = $name unless defined $client_name;  # Fall back to global if not provided
 
   my %form;
-  $form{'client'}=enc($name);
+  $form{'client'}=enc($client_name);
   $form{'topic'}=enc($regex);
 
   # Add auth if credentials are available
@@ -316,8 +446,8 @@ sub get_vals_by_regex {
 }
 
 sub putval {
-  my ($ip, $port, $topic, $message, $from, $username, $password) = @_;
-  publish_nothread_put($ip, $port, $topic, $message, $from, $username, $password);
+  my ($ip, $port, $topic, $message, $from, $username, $password, $client_name) = @_;
+  publish_nothread_put($ip, $port, $topic, $message, $from, $username, $password, $client_name);
 }
 
 sub get_version {
@@ -325,44 +455,52 @@ sub get_version {
   return $self->get_($ip,$port,$pwd,"/VERSION");
 }
 
+# Usage: getversion($ip, $port, $pwd, $client_name)
 sub getversion {
-  my ($ip,$port,$pwd) = @_;
-  return get($ip,$port,$pwd,"/VERSION");
+  my ($ip,$port,$pwd,$client_name) = @_;
+  return get($ip,$port,$pwd,"/VERSION",0,$client_name);
 }
 
+# Usage: getfileversion($ip, $port, $pwd, $client_name)
 sub getfileversion {
-  my ($ip,$port,$pwd) = @_;
-  return get($ip,$port,$pwd,"/FILEVERSION");
+  my ($ip,$port,$pwd,$client_name) = @_;
+  return get($ip,$port,$pwd,"/FILEVERSION",0,$client_name);
 }
 
+# Usage: getstats($ip, $port, $pwd, $client_name)
 sub getstats {
-  my ($ip,$port,$pwd) = @_;
-  return get($ip,$port,$pwd,"/STATS");
+  my ($ip,$port,$pwd,$client_name) = @_;
+  return get($ip,$port,$pwd,"/STATS",0,$client_name);
 }
 
+# Usage: getclients($ip, $port, $pwd, $client_name)
 sub getclients {
-  my ($ip,$port,$pwd) = @_;
-  return get($ip,$port,$pwd,"/CLIENTS");
+  my ($ip,$port,$pwd,$client_name) = @_;
+  return get($ip,$port,$pwd,"/CLIENTS",0,$client_name);
 }
 
+# Usage: getposters($ip, $port, $pwd, $client_name)
 sub getposters {
-  my ($ip,$port,$pwd) = @_;
-  return get($ip,$port,$pwd,"/POSTERS");
+  my ($ip,$port,$pwd,$client_name) = @_;
+  return get($ip,$port,$pwd,"/POSTERS",0,$client_name);
 }
 
+# Usage: gettopics($ip, $port, $pwd, $client_name)
 sub gettopics {
-  my ($ip,$port,$pwd) = @_;
-  return get($ip,$port,$pwd,"/TOPICS");
+  my ($ip,$port,$pwd,$client_name) = @_;
+  return get($ip,$port,$pwd,"/TOPICS",0,$client_name);
 }
 
+# Usage: getpeerhosts($ip, $port, $pwd, $client_name)
 sub getpeerhosts {
-  my ($ip,$port,$pwd) = @_;
-  return get($ip,$port,$pwd,"/PEERHOSTS");
+  my ($ip,$port,$pwd,$client_name) = @_;
+  return get($ip,$port,$pwd,"/PEERHOSTS",0,$client_name);
 }
 
+# Usage: getcrooks($ip, $port, $pwd, $client_name)
 sub getcrooks {
-  my ($ip,$port,$pwd) = @_;
-  return get($ip,$port,$pwd,"/CROOKS");
+  my ($ip,$port,$pwd,$client_name) = @_;
+  return get($ip,$port,$pwd,"/CROOKS",0,$client_name);
 }
 
 sub get_ {
@@ -373,7 +511,7 @@ sub get_ {
   my $retval=undef;
 
   my %form;
-  $form{'client'}=enc($name);
+  $form{'client'}=enc($self->{name});  # Use instance variable instead of global
   $form{'pwd'}=enc($pwd);
   $form{'time'}=enc(time);
   my $response = $mua->post( $post_url, \%form );
@@ -391,15 +529,18 @@ sub get_ {
   return $retval;
 }
 
+# Usage: get($ip, $port, $pwd, $endpoint, $retries, $client_name)
 sub get {
-  my ($ip,$port,$pwd,$endpoint,$retries) = @_;
+  my ($ip,$port,$pwd,$endpoint,$retries,$client_name) = @_;
   $retries ||= 0;
+  $client_name = $name unless defined $client_name;  # Fall back to global if not provided
+
   #my $ua      = LWP::UserAgent->new(timeout=>8);
   my $post_url="http://" . $ip . ":" . $port . "/$endpoint";
   my $retval=undef;
 
   my %form;
-  $form{'client'}=enc($name);
+  $form{'client'}=enc($client_name);
   $form{'pwd'}=enc($pwd);
   my $response = $gua->post( $post_url, \%form );
   if($response->is_success) {
@@ -408,7 +549,7 @@ sub get {
   } elsif ($response->code() eq "401") {
     print "Vanligen ange pwd.\n";
   } elsif ($retries < 5) {
-    get($ip,$port,$pwd,$endpoint,$retries+1);
+    get($ip,$port,$pwd,$endpoint,$retries+1,$client_name);
   } else {
     warn $response->status_line()."\n";
   }
@@ -426,7 +567,7 @@ sub pickup {
     client => enc($self->{name})
   });
 
-  my $response = $mua->post( $server_url.":".$server_port ."/PICKUP", $form );
+  my $response = $mua->post( $self->{server_url}.":".$self->{server_port} ."/PICKUP", $form );
   if($response->is_success) {
     my $respcont=dec($response->content);
     $response = $json->decode($respcont);
@@ -490,6 +631,84 @@ sub dec {
   my $decoded = decode_base64($encoded);
   $decoded =~ tr/A-Za-z/N-ZA-Mn-za-m/;
   return $decoded;
+}
+
+# MQTT Support Methods
+
+sub _init_mqtt {
+  my ($self) = @_;
+
+  eval {
+    my $broker = "$self->{server_ip}:$self->{mqtt_port}";
+
+    # Create MQTT connection
+    $self->{mqtt_client} = Net::MQTT::Simple->new($broker);
+
+    # Note: Net::MQTT::Simple doesn't support username/password authentication
+    # For authenticated MQTT, users should configure their MQTT broker to allow
+    # unauthenticated access or use a different Perl MQTT library
+
+    # Store MQTT subscriptions for later processing
+    $self->{mqtt_subscriptions} = {};
+
+    $self->{mqtt_connected} = 1;
+    print "✓ Connected to MQTT broker at $broker\n";
+
+  };
+  if ($@) {
+    warn "MQTT connection failed: $@\n";
+    warn "Falling back to HTTP mode\n";
+    $self->{use_mqtt} = 0;
+  }
+}
+
+sub _process_mqtt_messages {
+  my ($self) = @_;
+
+  return unless $self->{use_mqtt} && $self->{mqtt_connected};
+
+  # Net::MQTT::Simple handles message processing in background
+  # The callbacks registered during subscribe() are called automatically
+  # This method is here for future enhancements
+}
+
+sub _topic_matches {
+  my ($self, $pattern, $topic) = @_;
+
+  # Simple MQTT wildcard matching (+ for single level, # for multi-level)
+  my @pattern_parts = split('/', $pattern);
+  my @topic_parts = split('/', $topic);
+
+  if (scalar @pattern_parts > scalar @topic_parts && $pattern_parts[-1] ne '#') {
+    return 0;
+  }
+
+  for (my $i = 0; $i < scalar @pattern_parts; $i++) {
+    if ($pattern_parts[$i] eq '#') {
+      return 1;  # Match everything after
+    }
+    return 0 if $i >= scalar @topic_parts;
+    next if $pattern_parts[$i] eq '+';  # Match single level
+    return 0 if $pattern_parts[$i] ne $topic_parts[$i];
+  }
+
+  return scalar @pattern_parts == scalar @topic_parts ||
+         (scalar @pattern_parts > 0 && $pattern_parts[-1] eq '#');
+}
+
+sub disconnect {
+  my ($self) = @_;
+
+  if ($self->{mqtt_client} && $self->{mqtt_connected}) {
+    eval {
+      $self->{mqtt_client}->disconnect();
+      $self->{mqtt_connected} = 0;
+      print "MQTT client disconnected\n";
+    };
+    if ($@) {
+      warn "Error disconnecting MQTT client: $@\n";
+    }
+  }
 }
 
 1;

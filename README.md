@@ -1,25 +1,33 @@
 # 🦟 Moustique
 
-**A lightweight, high-performance message broker that speaks HTTP.**
+**A lightweight, high-performance Pub/Sub Message Broker — speaks both MQTT and HTTP.**
 
 [![License](https://img.shields.io/github/license/moustiqueserver/moustique)](https://opensource.org/licenses/gpl3-0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org/)
+[![MQTT](https://img.shields.io/badge/MQTT-5.0-purple?logo=mqtt)](https://mqtt.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-Moustique is a simple, fast, and lightweight pub/sub message broker that uses plain HTTP(S) for communication.
+Moustique is a simple, fast, and lightweight pub/sub message broker with **dual protocol support**: native MQTT for real-time push messaging and HTTP for polling-based clients. Choose the protocol that fits your use case — or use both simultaneously!
 
 **Moustique** offers:
 
-- 🎯 **Simple integration** - Easy to use clients available for Go, Python, JavaScript, Java, Perl, and CLI
+- 🔄 **Dual Protocol Support** - Native MQTT for push + HTTP for polling — use what fits your needs
+- 🎯 **Simple integration** - Clients for Go, Python, JavaScript, Java, Perl with auto-detect MQTT/HTTP
 - 🚀 **High performance** - Written in Go, handles thousands of concurrent connections
-- 📡 **Pub/Sub communication** – subscribe to topics and receive messages in real-time
-- 🔑 **Key/Value storage** – store and retrieve values
+- 📡 **Real-time push** – MQTT delivers messages instantly without polling
+- 📨 **HTTP polling fallback** – Works everywhere, even through restrictive firewalls
+- 🔑 **Key/Value storage** – Store and retrieve persistent values
 - 💾 **Persistent storage** - Messages survive restarts with SQLite backend
 - 🎨 **Built-in web UI** - Monitor and manage your broker from your browser
 - 🔍 **Powerful wildcards** - MQTT-style topic matching with `+` and `#`
 - 🔐 **Multi-tenant support** - Optional per-user authentication and isolated brokers
 - 🛠️ **Command-line tools** - Standalone CLI for quick interactions
+- ⚡ **Compatible** - Works with standard MQTT clients like `mosquitto_pub`/`mosquitto_sub`
+
+## 🎬 See It In Action
+
+Check out our [interactive demos](demos/) to see Moustique in action, or try the Quick Start below:
 
 ## 🚀 Quick Start
 
@@ -39,7 +47,7 @@ make all
 ### Run the server
 
 ```bash
-# Start with defaults (port 33335)
+# Start with defaults (HTTP port 33334, MQTT port 1883)
 ./moustique
 
 # Or with custom config
@@ -49,10 +57,31 @@ make all
 ./moustique -generate-config
 ```
 
+**The server now listens on TWO ports:**
+- **HTTP**: `http://localhost:33334` - Web UI, REST API, polling clients
+- **MQTT**: `tcp://localhost:1883` - Standard MQTT protocol for push messaging
+
 **Open web UI:**
 ```bash
 # Open in browser
-http://localhost:33335/
+http://localhost:33334/
+```
+
+### Try it with MQTT
+
+Moustique works with standard MQTT tools:
+
+```bash
+# Subscribe with mosquitto
+mosquitto_sub -h localhost -p 1883 -t "test/topic" -u demo -P demo123
+
+# Publish with mosquitto (in another terminal)
+mosquitto_pub -h localhost -p 1883 -t "test/topic" -m "Hello MQTT!" -u demo -P demo123
+
+# Also works with HTTP
+curl -X POST http://localhost:33334/POST \
+  -d "topic=$(echo -n 'test/topic' | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m')" \
+  -d "message=$(echo -n 'Hello HTTP!' | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m')"
 ```
 
 ### Command-line Client
@@ -92,9 +121,18 @@ pip install moustique-client
 **Usage:**
 ```python
 from moustique import Moustique
+import time
 
-# Create client
-client = Moustique(ip="127.0.0.1", port="33335", client_name="MyApp")
+# Create client with MQTT (real-time push)
+client = Moustique(
+    ip="127.0.0.1",
+    port="33334",
+    client_name="MyApp",
+    username="demo",
+    password="demo123",
+    use_mqtt=True,        # Enable MQTT for instant message delivery
+    mqtt_port=1883
+)
 
 # Subscribe to messages
 def on_message(topic, message, from_name):
@@ -111,10 +149,21 @@ client.putval("/config/setting", "value")
 # Get value
 value = client.get_val("/config/setting")
 
-# Poll for new messages (run in loop)
+# With MQTT: messages arrive instantly via callbacks
+# With HTTP: need to poll for messages
 while True:
-    client.tick()
+    client.tick()  # MQTT: no-op, HTTP: polls for messages
     time.sleep(1)
+
+# Clean disconnect
+client.disconnect()
+```
+
+**HTTP-only mode (no MQTT):**
+```python
+# Omit use_mqtt parameter or set it to False
+client = Moustique(ip="127.0.0.1", port="33334", client_name="MyApp")
+# Client will use HTTP polling automatically
 ```
 
 **Helper functions:**
@@ -138,11 +187,15 @@ npm install moustique-client
 ```javascript
 import { Moustique } from 'moustique-client';
 
-// Create client
+// Create client with MQTT (real-time push)
 const client = new Moustique({
     ip: '127.0.0.1',
-    port: '33335',
-    clientName: 'MyApp'
+    port: '33334',
+    clientName: 'MyApp',
+    username: 'demo',
+    password: 'demo123',
+    useMqtt: true,      // Enable MQTT for instant delivery
+    mqttPort: 1883
 });
 
 // Subscribe to messages
@@ -159,8 +212,14 @@ await client.putval('/config/setting', 'value');
 // Get value
 const value = await client.getval('/config/setting');
 
-// Poll for new messages
-setInterval(() => client.pickup(), 1000);
+// With MQTT: messages arrive automatically via callbacks
+// With HTTP: need to poll for messages
+if (!client.useMqtt) {
+    setInterval(() => client.pickup(), 1000);
+}
+
+// Clean disconnect
+client.disconnect();
 ```
 
 ### Java
@@ -183,8 +242,16 @@ implementation 'com.moustique:moustique-client:1.0.0'
 ```java
 import moustique.MoustiqueClient;
 
-// Create client
-MoustiqueClient client = new MoustiqueClient("127.0.0.1", "33335", "MyApp");
+// Create client with MQTT (real-time push)
+MoustiqueClient client = new MoustiqueClient(
+    "127.0.0.1",
+    "33334",
+    "MyApp",
+    "demo",      // username
+    "demo123",   // password
+    true,        // use MQTT
+    1883         // MQTT port
+);
 
 // Subscribe to messages
 client.subscribe("/test/topic", msg -> {
@@ -200,11 +267,15 @@ client.putval("/config/setting", "value").join();
 // Get value
 String value = client.getval("/config/setting").join();
 
-// Poll for new messages
+// With MQTT: messages arrive via callbacks
+// With HTTP: poll for messages
 while (true) {
-    client.pickup().join();
+    client.pickup().join();  // MQTT: no-op, HTTP: polls
     TimeUnit.SECONDS.sleep(1);
 }
+
+// Clean disconnect
+client.disconnect();
 ```
 
 ### Go
@@ -218,8 +289,16 @@ go get github.com/moustiqueserver/moustique/clients/go/moustique
 ```go
 import "github.com/moustiqueserver/moustique/clients/go/moustique"
 
-// Create client
-client := moustique.New("127.0.0.1", "33335", "MyApp")
+// Create client with MQTT (real-time push)
+client := moustique.New(
+    "127.0.0.1",
+    "33334",
+    "MyApp",
+    "demo",      // username
+    "demo123",   // password
+    "true",      // use MQTT
+    "1883"       // MQTT port
+)
 
 // Subscribe to messages
 client.Subscribe("/test/topic", func(topic, message, from string) {
@@ -235,28 +314,97 @@ client.PutVal("/config/setting", "value")
 // Get value
 value := client.GetVal("/config/setting")
 
-// Poll for new messages
+// With MQTT: messages arrive via callbacks
+// With HTTP: poll for messages
 ticker := time.NewTicker(1 * time.Second)
 for range ticker.C {
-    client.Pickup()
+    client.Pickup()  // MQTT: no-op, HTTP: polls
 }
+
+// Clean disconnect
+client.Disconnect()
+```
+
+**HTTP-only mode:**
+```go
+// Omit MQTT parameters for HTTP polling
+client := moustique.New("127.0.0.1", "33334", "MyApp", "demo", "demo123")
 ```
 ### Perl
+
 **Usage:**
 ```perl
 use Moustique;
 
-my $mous = Moustique->new(ip => "localhost", port => 33335, name => "my-app");
+# Create client (HTTP polling)
+my $mous = Moustique->new(
+    ip => "localhost",
+    port => 33334,
+    name => "my-app",
+    username => "demo",
+    password => "demo123"
+);
+
+# Subscribe to messages
 $mous->subscribe("/sensors/+/temperature", sub {
-    my ($topic, $message) = @_;
-    print "Temperature: $message\n";
+    my ($topic, $message, $from) = @_;
+    print "Temperature: $message from $from\n";
 });
-$mous->publish("/sensors/bedroom/temperature", "23.1");
+
+# Publish message
+$mous->publish("/sensors/bedroom/temperature", "23.1", "my-app");
+
+# Poll for messages
+while (1) {
+    $mous->tick();
+    sleep(1);
+}
 ```
+
+**Note:** MQTT not currently supported in Perl client due to library limitations. The Perl client uses HTTP polling and gracefully falls back when MQTT is requested. For production MQTT use, consider the Python, JavaScript, Go, or Java clients.
 
 ## 🎯 Key Features
 
-### 1. Multi-Tenant Support
+### 1. Hybrid MQTT + HTTP Architecture
+
+Moustique uniquely supports **both** protocols simultaneously:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Moustique Broker                       │
+│  ┌────────────────┐        ┌────────────────────┐      │
+│  │  HTTP Server   │        │   MQTT Server      │      │
+│  │  Port 33334    │        │   Port 1883        │      │
+│  └────────┬───────┘        └──────┬─────────────┘      │
+│           │                       │                     │
+│           └───────┬───────────────┘                     │
+│                   │                                     │
+│           ┌───────▼────────┐                            │
+│           │  Message Bus   │                            │
+│           │  (Per-User)    │                            │
+│           └────────────────┘                            │
+└─────────────────────────────────────────────────────────┘
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+   ┌────▼───┐   ┌───▼────┐   ┌──▼─────┐
+   │ Python │   │ Node.js│   │mosquitto│
+   │ (MQTT) │   │ (HTTP) │   │  (MQTT) │
+   └────────┘   └────────┘   └────────┘
+```
+
+**Choose your protocol:**
+- **MQTT** - Real-time push, low latency, efficient for IoT
+- **HTTP** - Works everywhere, simple REST API, firewall-friendly
+- **Both** - MQTT client publishes, HTTP client receives (or vice versa)
+
+**Why hybrid?**
+- **Flexibility**: Each client chooses the best protocol for their needs
+- **Compatibility**: Works with standard MQTT tools AND REST clients
+- **Reliability**: HTTP fallback when MQTT is blocked by firewalls
+- **Migration**: Gradually migrate from HTTP to MQTT without breaking changes
+
+### 2. Multi-Tenant Support
 
 Moustique supports optional authentication with isolated brokers per user:
 
@@ -349,40 +497,29 @@ Create `config.yaml`:
 
 ```yaml
 server:
-  port: 33335
+  port: 33334              # HTTP port for web UI and API
+  mqtt_port: 1883          # MQTT port for push messaging (set to 0 to disable)
   host: "0.0.0.0"
-  timeout: 5s
-  max_connections: 1000
+  timeout: 30s
+  allow_public: false      # Require authentication
+  max_request_size: 10485760  # 10MB
 
 database:
-  path: "./data/moustique.db"
-
-security:
-  allowed_ips:
-    - "192.168.0.0/16"
-    - "10.0.0.0/8"
-  tailscale_enabled: true
-  password_file: "./data/.moustique_pwd"
+  path: "./data"           # SQLite database directory
 
 logging:
   level: "info"
-  directory: "/var/log/moustique"  # Directory for all log files
+  file: ""                 # Empty = console only, or specify path
 
 security:
   allowed_peers:
     - "192.168.0.0/16"
     - "10.0.0.0/8"
     - "172.16.0.0/12"
+  blocked_peers: []
   max_topic_length: 256
   max_message_size: 1048576  # 1MB
   default_rate_limit: 1000   # Requests per minute (0 = unlimited)
-  fail2ban_jail: "moustique"
-  fail2ban_level: "normal"   # minimal, relaxed, normal, strict
-
-performance:
-  message_queue_timeout: 5m
-  poster_stats_timeout: 1h
-  maintenance_interval: 30s
 ```
 
 ### API Endpoints
@@ -634,16 +771,20 @@ Benchmarks on a modest server (4 CPU cores, 8GB RAM):
 - [x] Go client
 - [x] Java client
 - [x] Perl client
-- [x] Access logging with rotation
-- [x] Fail2ban integration with configurable levels
+- [x] **MQTT protocol support** 🎉
+- [x] Hybrid MQTT/HTTP clients with automatic fallback
+- [x] Standard MQTT compatibility (mosquitto_pub/sub)
 - [x] Rate limiting per user
 - [x] IP-based access control (CIDR support)
-- [ ] TLS/HTTPS support
-- [ ] Authentication plugins
+- [ ] TLS/HTTPS support (HTTP + MQTTS)
+- [ ] MQTT QoS 1 & 2 (currently QoS 0 only)
+- [ ] Retained messages
+- [ ] Last Will and Testament (LWT)
 - [ ] Message retention policies
 - [ ] Clustering support
 - [ ] WebSocket support
-- [ ] MQTT protocol support
+- [ ] Authentication plugins (JWT, OAuth2)
+- [ ] Prometheus metrics endpoint
 - [ ] NOSTR relay support
 
 ## 📜 License
