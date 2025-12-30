@@ -1527,7 +1527,7 @@ func (s *Server) handleLNBitsWebhook(conn net.Conn, req *http.Request) {
 	var payload struct {
 		PaymentHash string `json:"payment_hash"`
 		Pending     bool   `json:"pending"`
-		Amount      int64  `json:"amount"` // in msats
+		Amount      int64  `json:"amount"` // in sats
 		Memo        string `json:"memo"`
 		Time        int64  `json:"time"`
 	}

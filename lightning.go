@@ -209,7 +209,7 @@ func NewLNBitsClient(apiKey string, baseURL string) *LNBitsClient {
 // LNBitsInvoiceRequest represents the request to create an invoice
 type LNBitsInvoiceRequest struct {
 	Out    bool   `json:"out"`
-	Amount int64  `json:"amount"` // amount in msats
+	Amount int64  `json:"amount"` // amount in sats
 	Memo   string `json:"memo"`
 	Expiry int    `json:"expiry,omitempty"` // seconds
 }
@@ -220,7 +220,7 @@ type LNBitsInvoiceResponse struct {
 	PaymentHash    string `json:"payment_hash"`
 	Bolt11         string `json:"bolt11"`
 	PaymentRequest string `json:"payment_request"`
-	Amount         int64  `json:"amount"` // in msats
+	Amount         int64  `json:"amount"` // in sats
 	Memo           string `json:"memo"`
 	Expiry         string `json:"expiry"` // ISO 8601 timestamp
 	Status         string `json:"status"` // pending, paid, expired
@@ -235,7 +235,7 @@ type LNBitsPaymentStatus struct {
 func (c *LNBitsClient) CreateInvoice(amountSats int64, description string, expiry int) (*LNBitsInvoiceResponse, error) {
 	reqBody := LNBitsInvoiceRequest{
 		Out:    false, // false = incoming payment (invoice)
-		Amount: amountSats * 1000, // convert sats to msats
+		Amount: amountSats, // LNBits API takes sats directly
 		Memo:   description,
 		Expiry: expiry,
 	}
