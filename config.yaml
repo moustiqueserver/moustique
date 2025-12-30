@@ -8,7 +8,7 @@ database:
   path: ./data
 logging:
   level: info
-  file: ""
+  directory: ./data
 security:
   allowed_peers: []
   blocked_peers: []

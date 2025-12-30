@@ -25,6 +25,9 @@ var landingHTML string
 //go:embed static/signup.html
 var signupHTML string
 
+//go:embed static/moustique_logo.png
+var logoPNG []byte
+
 func (s *Server) ServeWebAdmin(conn net.Conn) {
 	s.sendHTML(conn, adminHTML)
 }
@@ -43,6 +46,10 @@ func (s *Server) ServeFavicon(conn net.Conn) {
 
 func (s *Server) ServeLanding(conn net.Conn) {
 	s.sendHTML(conn, landingHTML)
+}
+
+func (s *Server) ServeLogo(conn net.Conn) {
+	s.sendPNG(conn, logoPNG)
 }
 
 /*o:embed static/admin.html

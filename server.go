@@ -628,6 +628,9 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	case "favicon.ico", "favicon.svg":
 		s.ServeFavicon(conn)
 		return
+	case "moustique_logo.png":
+		s.ServeLogo(conn)
+		return
 	}
 
 	// Admin endpoints (require admin password, not user auth)
@@ -1366,6 +1369,14 @@ func (s *Server) sendSVG(conn net.Conn, svg string) {
 	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(svg))
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "%s", svg)
+}
+
+func (s *Server) sendPNG(conn net.Conn, png []byte) {
+	fmt.Fprintf(conn, "HTTP/1.0 200 OK\r\n")
+	fmt.Fprintf(conn, "Content-Type: image/png\r\n")
+	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(png))
+	fmt.Fprintf(conn, "\r\n")
+	conn.Write(png)
 }
 
 func (s *Server) sendNotFound(conn net.Conn) {
