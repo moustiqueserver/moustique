@@ -1,0 +1,20 @@
+server:
+  port: 33334
+  mqtt_port: 1883             # MQTT port, set to 0 to disable
+  timeout: 30s
+  allow_public: true          # Allow unauthenticated access (set to false for production)
+  max_request_size: 10485760  # 10MB in bytes
+database:
+  path: /var/lib/moustique
+logging:
+  level: info
+  directory: /var/log/moustique
+security:
+  allowed_peers: 
+  - 0.0.0.0/0           # allow all
+  blocked_peers: []
+  max_topic_length: 256
+  max_message_size: 1048576   # 1MB in bytes
+  default_rate_limit: 1000    # requests per minute, 0 = unlimited
+  # fail2ban_jail: "moustique"  # Uncomment to enable fail2ban
+  # fail2ban_level: "strict"    # Options: strict, normal, relaxed, minimal

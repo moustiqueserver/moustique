@@ -31,6 +31,10 @@ Thumbs.db
 .prettierrc*
 .perftest/
 config-test.yaml
+DOCKER.md
+.dockerignore
+Dockerfile
+docker-compose.yml
 
 # Build artifacts
 node_modules/
