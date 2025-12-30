@@ -118,6 +118,7 @@ func main() {
 		config.Security.Fail2banJail,
 		config.Security.Fail2banLevel,
 		config.Logging.Directory,
+		&config.Lightning,
 	)
 	if err != nil {
 		logger.Fatalf("Failed to create server: %v", err)

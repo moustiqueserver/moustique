@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -201,7 +202,7 @@ func (bm *BrokerManager) SaveAll() error {
 
 // UserAuth handles user authentication with persistence
 type UserAuth struct {
-	users    map[string]string // username -> password hash
+	users    map[string]*UserData // username -> user data
 	mu       sync.RWMutex
 	filePath string
 }
@@ -210,6 +211,7 @@ type UserAuth struct {
 type UserData struct {
 	Username     string `json:"username"`
 	PasswordHash string `json:"password_hash"`
+	Credits      int64  `json:"credits"` // -1 = unlimited, 0 = none, >0 = count
 }
 
 // NewUserAuth creates a new user authentication handler
@@ -223,7 +225,7 @@ func NewUserAuth(dataDir string) (*UserAuth, error) {
 	filePath := filepath.Join(usersDir, "users.json")
 
 	ua := &UserAuth{
-		users:    make(map[string]string),
+		users:    make(map[string]*UserData),
 		filePath: filePath,
 	}
 
@@ -253,9 +255,9 @@ func (ua *UserAuth) Load() error {
 		return fmt.Errorf("failed to parse users file: %w", err)
 	}
 
-	ua.users = make(map[string]string)
-	for _, user := range userData {
-		ua.users[user.Username] = user.PasswordHash
+	ua.users = make(map[string]*UserData)
+	for i := range userData {
+		ua.users[userData[i].Username] = &userData[i]
 	}
 
 	return nil
@@ -267,11 +269,8 @@ func (ua *UserAuth) Save() error {
 	defer ua.mu.RUnlock()
 
 	userData := make([]UserData, 0, len(ua.users))
-	for username, hash := range ua.users {
-		userData = append(userData, UserData{
-			Username:     username,
-			PasswordHash: hash,
-		})
+	for _, user := range ua.users {
+		userData = append(userData, *user)
 	}
 
 	data, err := json.MarshalIndent(userData, "", "  ")
@@ -289,7 +288,17 @@ func (ua *UserAuth) Save() error {
 // AddUser adds or updates a user
 func (ua *UserAuth) AddUser(username, password string) error {
 	ua.mu.Lock()
-	ua.users[username] = hashPassword(password)
+	if existing, ok := ua.users[username]; ok {
+		// Update password but keep credits
+		existing.PasswordHash = hashPassword(password)
+	} else {
+		// New user with 0 credits
+		ua.users[username] = &UserData{
+			Username:     username,
+			PasswordHash: hashPassword(password),
+			Credits:      0,
+		}
+	}
 	ua.mu.Unlock()
 
 	return ua.Save()
@@ -300,11 +309,82 @@ func (ua *UserAuth) ValidateUser(username, password string) bool {
 	ua.mu.RLock()
 	defer ua.mu.RUnlock()
 
-	hash, exists := ua.users[username]
+	user, exists := ua.users[username]
 	if !exists {
 		return false
 	}
-	return hash == hashPassword(password)
+	return user.PasswordHash == hashPassword(password)
+}
+
+// GetUserCredits returns the credits for a user (-1 = unlimited, 0 = none, >0 = count)
+func (ua *UserAuth) GetUserCredits(username string) int64 {
+	ua.mu.RLock()
+	defer ua.mu.RUnlock()
+
+	user, exists := ua.users[username]
+	if !exists {
+		return 0
+	}
+	return user.Credits
+}
+
+// DeductCredit atomically deducts 1 credit from user. Returns true if successful.
+func (ua *UserAuth) DeductCredit(username string) bool {
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
+
+	user, exists := ua.users[username]
+	if !exists {
+		return false
+	}
+
+	// Unlimited credits
+	if user.Credits == -1 {
+		return true
+	}
+
+	// No credits left
+	if user.Credits <= 0 {
+		return false
+	}
+
+	// Deduct credit
+	user.Credits--
+	ua.Save() // Save after deduction
+	return true
+}
+
+// AddCredits adds credits to a user
+func (ua *UserAuth) AddCredits(username string, amount int64) error {
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
+
+	user, exists := ua.users[username]
+	if !exists {
+		return fmt.Errorf("user not found: %s", username)
+	}
+
+	// Don't modify if already unlimited
+	if user.Credits == -1 {
+		return nil
+	}
+
+	user.Credits += amount
+	return ua.Save()
+}
+
+// SetCredits sets the exact credit amount for a user (-1 = unlimited)
+func (ua *UserAuth) SetCredits(username string, amount int64) error {
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
+
+	user, exists := ua.users[username]
+	if !exists {
+		return fmt.Errorf("user not found: %s", username)
+	}
+
+	user.Credits = amount
+	return ua.Save()
 }
 
 // hashPassword creates a SHA256 hash of the password
@@ -324,6 +404,9 @@ type Server struct {
 	userAuth       *UserAuth
 	security       *SecurityChecker
 	rateLimiter    *RateLimiter
+	lightning      *LightningRuntime
+	lightningDB    *LightningDB
+	lightningCfg   *LightningConfig
 	debug          bool
 	version        string
 	allowPublic    bool
@@ -333,7 +416,7 @@ type Server struct {
 }
 
 // NewServer creates a new HTTP server
-func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, allowedPeers []string, maxRequestSize int64, maxTopicLength int, maxMessageSize int64, defaultRateLimit int, fail2banJail string, fail2banLevel string, logDir string) (*Server, error) {
+func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, allowedPeers []string, maxRequestSize int64, maxTopicLength int, maxMessageSize int64, defaultRateLimit int, fail2banJail string, fail2banLevel string, logDir string, lightningCfg *LightningConfig) (*Server, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
@@ -358,6 +441,59 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 		errorLogger = nil // Continue without error logging
 	}
 
+	// Initialize Lightning if enabled
+	var lightningRuntime *LightningRuntime
+	var lightningDB *LightningDB
+
+	if lightningCfg != nil && lightningCfg.Enabled {
+		// Create Lightning database
+		ldb, err := NewLightningDB(dataDir)
+		if err != nil {
+			logger.Printf("Warning: Failed to initialize Lightning DB: %v", err)
+		} else {
+			lightningDB = ldb
+
+			// Get API credentials from environment
+			apiKey := ""
+			webhookSecret := ""
+			if lightningCfg.APIKeyEnv != "" {
+				apiKey = os.Getenv(lightningCfg.APIKeyEnv)
+			}
+			if lightningCfg.WebhookSecretEnv != "" {
+				webhookSecret = os.Getenv(lightningCfg.WebhookSecretEnv)
+			}
+
+			if apiKey == "" {
+				logger.Println("Lightning enabled but API key not found in environment - Lightning features disabled")
+			} else {
+				lightningRuntime = &LightningRuntime{
+					Enabled:       true,
+					Provider:      lightningCfg.Provider,
+					APIKey:        apiKey,
+					WebhookSecret: webhookSecret,
+					LNBitsURL:     lightningCfg.LNBitsURL,
+				}
+
+				// Initialize the appropriate client based on provider
+				if lightningCfg.Provider == "lnbits" {
+					if lightningCfg.LNBitsURL == "" {
+						logger.Println("Lightning provider is 'lnbits' but lnbits_url not configured - Lightning features disabled")
+						lightningRuntime = nil
+					} else {
+						lightningRuntime.LNBitsClient = NewLNBitsClient(apiKey, lightningCfg.LNBitsURL)
+						logger.Printf("Lightning Network payments enabled via LNBits at %s", lightningCfg.LNBitsURL)
+					}
+				} else if lightningCfg.Provider == "opennode" {
+					lightningRuntime.OpenNodeClient = NewOpenNodeClient(apiKey)
+					logger.Println("Lightning Network payments enabled via OpenNode")
+				} else {
+					logger.Printf("Unknown Lightning provider '%s' - Lightning features disabled", lightningCfg.Provider)
+					lightningRuntime = nil
+				}
+			}
+		}
+	}
+
 	return &Server{
 		port:           port,
 		timeout:        timeout,
@@ -368,6 +504,9 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 		userAuth:       userAuth,
 		security:       NewSecurityChecker(allowedPeers),
 		rateLimiter:    NewRateLimiter(defaultRateLimit, dataDir),
+		lightning:      lightningRuntime,
+		lightningDB:    lightningDB,
+		lightningCfg:   lightningCfg,
 		debug:          debug,
 		version:        Version,
 		allowPublic:    allowPublic,
@@ -633,6 +772,75 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 		return
 	}
 
+	// Webhook endpoint for Lightning payment notifications (no auth required)
+	if strings.HasPrefix(path, "webhook/") {
+		if path == "webhook/lnbits" && req.Method == "POST" {
+			s.handleLNBitsWebhook(conn, req)
+			return
+		}
+		s.sendNotFound(conn)
+		return
+	}
+
+	// API endpoints (HTTP REST API with Basic Auth)
+	if strings.HasPrefix(path, "api/") {
+		// Extract Basic Auth credentials
+		authHeader := req.Header.Get("Authorization")
+		if authHeader == "" {
+			s.sendUnauthorized(conn, "Authorization header required")
+			return
+		}
+
+		// Parse Basic Auth
+		const prefix = "Basic "
+		if !strings.HasPrefix(authHeader, prefix) {
+			s.sendUnauthorized(conn, "Invalid authorization header")
+			return
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(authHeader[len(prefix):])
+		if err != nil {
+			s.sendUnauthorized(conn, "Invalid authorization header")
+			return
+		}
+
+		credentials := strings.SplitN(string(decoded), ":", 2)
+		if len(credentials) != 2 {
+			s.sendUnauthorized(conn, "Invalid authorization header")
+			return
+		}
+
+		apiUsername := credentials[0]
+		apiPassword := credentials[1]
+
+		// Validate user
+		if !s.userAuth.ValidateUser(apiUsername, apiPassword) {
+			s.sendUnauthorized(conn, "Invalid credentials")
+			return
+		}
+
+		// Parse query parameters for package/charge_id
+		queryParams := make(map[string]string)
+		for key, values := range req.URL.Query() {
+			if len(values) > 0 {
+				queryParams[key] = values[0]
+			}
+		}
+
+		// Route to API handler
+		switch path {
+		case "api/credits":
+			s.handleGetCredits(conn, queryParams, apiUsername)
+		case "api/buy_credits":
+			s.handleBuyCredits(conn, queryParams, apiUsername)
+		case "api/check_invoice":
+			s.handleCheckInvoice(conn, queryParams, apiUsername)
+		default:
+			s.sendNotFound(conn)
+		}
+		return
+	}
+
 	// Admin endpoints (require admin password, not user auth)
 	if strings.HasPrefix(path, "ADMIN/") {
 		adminPwd := params["admin_password"]
@@ -761,6 +969,12 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 		s.handleTopics(conn, params, broker)
 	case "CROOKS":
 		s.handleCrooks(conn, params, broker)
+	case "BUY_CREDITS":
+		s.handleBuyCredits(conn, params, username)
+	case "CHECK_INVOICE":
+		s.handleCheckInvoice(conn, params, username)
+	case "CREDITS":
+		s.handleGetCredits(conn, params, username)
 	default:
 		// Whitelist legitimate browser resources that should just get 404, not banned
 		legitimateResources := []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot"}
@@ -1087,6 +1301,274 @@ func (s *Server) handleLog(conn net.Conn, params map[string]string, broker *Brok
 	s.GetUserLogs(conn, broker, 100)
 }
 
+// Lightning Network handlers
+
+func (s *Server) handleBuyCredits(conn net.Conn, params map[string]string, username string) {
+	// Check if Lightning is enabled
+	if s.lightning == nil || !s.lightning.Enabled {
+		s.sendError(conn, fmt.Errorf("lightning payments not enabled"))
+		return
+	}
+
+	// Get requested package
+	packageName := params["package"]
+	if packageName == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	// Get pricing tier
+	tier, exists := s.lightningCfg.Pricing[packageName]
+	if !exists {
+		s.sendError(conn, fmt.Errorf("invalid package: %s", packageName))
+		return
+	}
+
+	// Create invoice based on provider
+	description := fmt.Sprintf("Moustique Credits: %d requests", tier.Credits)
+	orderID := fmt.Sprintf("%s-%d", username, time.Now().Unix())
+
+	var invoice *LightningInvoice
+	var responseData map[string]interface{}
+
+	if s.lightning.Provider == "lnbits" {
+		// Use LNBits
+		invoiceResp, err := s.lightning.LNBitsClient.CreateInvoice(tier.Sats, description, 3600)
+		if err != nil {
+			s.logger.Printf("Failed to create LNBits invoice: %v", err)
+			s.sendError(conn, fmt.Errorf("failed to create invoice"))
+			return
+		}
+
+		// Parse expiry timestamp
+		expiryTime, _ := time.Parse(time.RFC3339, invoiceResp.Expiry)
+		expiresAt := expiryTime.Unix()
+
+		invoice = &LightningInvoice{
+			ChargeID:   invoiceResp.PaymentHash,
+			Username:   username,
+			AmountSats: tier.Sats,
+			Credits:    tier.Credits,
+			Status:     "pending",
+			Invoice:    invoiceResp.Bolt11,
+			ExpiresAt:  expiresAt,
+			CreatedAt:  time.Now().Unix(),
+			Processed:  false,
+		}
+
+		responseData = map[string]interface{}{
+			"charge_id":   invoiceResp.PaymentHash,
+			"invoice":     invoiceResp.Bolt11,
+			"amount_sats": tier.Sats,
+			"credits":     tier.Credits,
+			"expires_at":  expiresAt,
+		}
+	} else {
+		// Use OpenNode
+		callbackURL := s.lightningCfg.WebhookURL
+		chargeResp, err := s.lightning.OpenNodeClient.CreateCharge(tier.Sats, description, orderID, callbackURL)
+		if err != nil {
+			s.logger.Printf("Failed to create OpenNode charge: %v", err)
+			s.sendError(conn, fmt.Errorf("failed to create invoice"))
+			return
+		}
+
+		invoice = &LightningInvoice{
+			ChargeID:   chargeResp.Data.ID,
+			Username:   username,
+			AmountSats: tier.Sats,
+			Credits:    tier.Credits,
+			Status:     "pending",
+			Invoice:    chargeResp.Data.LightningInvoice.Payreq,
+			ExpiresAt:  chargeResp.Data.LightningInvoice.ExpiresAt,
+			CreatedAt:  time.Now().Unix(),
+			Processed:  false,
+		}
+
+		responseData = map[string]interface{}{
+			"charge_id":   chargeResp.Data.ID,
+			"invoice":     chargeResp.Data.LightningInvoice.Payreq,
+			"amount_sats": tier.Sats,
+			"credits":     tier.Credits,
+			"expires_at":  chargeResp.Data.LightningInvoice.ExpiresAt,
+		}
+	}
+
+	// Store invoice in database
+	if err := s.lightningDB.CreateInvoice(invoice); err != nil {
+		s.logger.Printf("Failed to store invoice: %v", err)
+		s.sendError(conn, fmt.Errorf("failed to create invoice"))
+		return
+	}
+
+	// Return invoice to user
+	s.sendPlainJSON(conn, responseData)
+}
+
+func (s *Server) handleCheckInvoice(conn net.Conn, params map[string]string, username string) {
+	// Check if Lightning is enabled
+	if s.lightning == nil || !s.lightning.Enabled {
+		s.sendError(conn, fmt.Errorf("lightning payments not enabled"))
+		return
+	}
+
+	chargeID := params["charge_id"]
+	if chargeID == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	// Get invoice from database
+	invoice, err := s.lightningDB.GetInvoice(chargeID)
+	if err != nil {
+		s.sendError(conn, err)
+		return
+	}
+
+	// Verify it belongs to this user
+	if invoice.Username != username {
+		s.sendUnauthorized(conn, "Not your invoice")
+		return
+	}
+
+	// If invoice is still pending, check if expired or paid
+	if invoice.Status == "pending" {
+		// Check if invoice has expired
+		now := time.Now().Unix()
+		if now > invoice.ExpiresAt {
+			// Invoice expired - update status
+			s.lightningDB.UpdateInvoiceStatus(invoice.ChargeID, "expired", 0)
+			invoice.Status = "expired"
+		} else {
+			// Still valid - check with Lightning provider
+			if s.lightning.Provider == "lnbits" {
+				// Check with LNBits
+				paid, err := s.lightning.LNBitsClient.CheckPayment(invoice.ChargeID)
+				if err != nil {
+					s.logger.Printf("Error checking LNBits payment: %v", err)
+				} else if paid {
+					// Payment confirmed! Process it
+					s.processPayment(invoice)
+				}
+			} else if s.lightning.Provider == "opennode" {
+				// Check with OpenNode
+				chargeInfo, err := s.lightning.OpenNodeClient.GetCharge(invoice.ChargeID)
+				if err != nil {
+					s.logger.Printf("Error checking OpenNode charge: %v", err)
+				} else if chargeInfo.Data.Status == "paid" {
+					// Payment confirmed! Process it
+					s.processPayment(invoice)
+				}
+			}
+		}
+	}
+
+	// Return status (may have been updated above)
+	s.sendPlainJSON(conn, map[string]interface{}{
+		"charge_id":   invoice.ChargeID,
+		"status":      invoice.Status,
+		"amount_sats": invoice.AmountSats,
+		"credits":     invoice.Credits,
+		"paid_at":     invoice.PaidAt,
+	})
+}
+
+// processPayment processes a paid Lightning invoice (updates status, grants credits)
+func (s *Server) processPayment(invoice *LightningInvoice) {
+	// Skip if already processed
+	if invoice.Processed {
+		return
+	}
+
+	paidAt := time.Now().Unix()
+
+	// Update invoice status
+	if err := s.lightningDB.UpdateInvoiceStatus(invoice.ChargeID, "paid", paidAt); err != nil {
+		s.logger.Printf("Error updating invoice status: %v", err)
+		return
+	}
+
+	// Grant credits to user
+	if err := s.userAuth.AddCredits(invoice.Username, invoice.Credits); err != nil {
+		s.logger.Printf("Error granting credits: %v", err)
+		return
+	}
+
+	// Mark invoice as processed
+	if err := s.lightningDB.MarkInvoiceProcessed(invoice.ChargeID); err != nil {
+		s.logger.Printf("Error marking invoice as processed: %v", err)
+		return
+	}
+
+	// Record transaction
+	if err := s.lightningDB.AddTransaction(invoice.Username, invoice.Credits, "purchase", invoice.ChargeID, paidAt); err != nil {
+		s.logger.Printf("Error recording transaction: %v", err)
+	}
+
+	// Update local invoice object so the response shows updated status
+	invoice.Status = "paid"
+	invoice.PaidAt = paidAt
+	invoice.Processed = true
+
+	s.logger.Printf("Payment processed: %s received %d credits (%d sats)", invoice.Username, invoice.Credits, invoice.AmountSats)
+}
+
+// handleLNBitsWebhook handles webhook notifications from LNBits
+func (s *Server) handleLNBitsWebhook(conn net.Conn, req *http.Request) {
+	// Read POST body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		s.logger.Printf("Error reading webhook body: %v", err)
+		s.sendBadRequest(conn)
+		return
+	}
+
+	// Parse JSON payload
+	var payload struct {
+		PaymentHash string `json:"payment_hash"`
+		Pending     bool   `json:"pending"`
+		Amount      int64  `json:"amount"` // in msats
+		Memo        string `json:"memo"`
+		Time        int64  `json:"time"`
+	}
+
+	if err := json.Unmarshal(body, &payload); err != nil {
+		s.logger.Printf("Error parsing webhook JSON: %v", err)
+		s.sendBadRequest(conn)
+		return
+	}
+
+	s.logger.Printf("LNBits webhook received: payment_hash=%s pending=%v amount=%d", payload.PaymentHash, payload.Pending, payload.Amount)
+
+	// If payment is not pending (i.e., it's paid), process it
+	if !payload.Pending {
+		// Find the invoice
+		invoice, err := s.lightningDB.GetInvoice(payload.PaymentHash)
+		if err != nil {
+			s.logger.Printf("Webhook: invoice not found for payment_hash %s: %v", payload.PaymentHash, err)
+			// Still return 200 OK to acknowledge receipt
+			s.sendOK(conn)
+			return
+		}
+
+		// Process the payment
+		s.processPayment(invoice)
+	}
+
+	// Send 200 OK response
+	s.sendOK(conn)
+}
+
+func (s *Server) handleGetCredits(conn net.Conn, params map[string]string, username string) {
+	credits := s.userAuth.GetUserCredits(username)
+
+	s.sendPlainJSON(conn, map[string]interface{}{
+		"username":  username,
+		"credits":   credits,
+		"unlimited": credits == -1,
+	})
+}
+
 func (s *Server) buildStatusPage(broker *Broker) string {
 	stats := broker.GetStats()
 
@@ -1354,6 +1836,22 @@ func (s *Server) sendJSON(conn net.Conn, data interface{}) {
 	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(encoded))
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "%s", encoded)
+}
+
+// sendPlainJSON sends plain JSON (without ROT13+base64 encoding) for API endpoints
+func (s *Server) sendPlainJSON(conn net.Conn, data interface{}) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		s.sendError(conn, err)
+		return
+	}
+
+	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\n")
+	fmt.Fprintf(conn, "Connection: close\r\n")
+	fmt.Fprintf(conn, "Content-Type: application/json\r\n")
+	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(jsonData))
+	fmt.Fprintf(conn, "\r\n")
+	fmt.Fprintf(conn, "%s", jsonData)
 }
 
 func (s *Server) sendHTML(conn net.Conn, html string) {

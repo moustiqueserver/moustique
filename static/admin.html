@@ -377,6 +377,70 @@
             margin-left: 10px;
             animation: pulse 2s infinite;
         }
+
+        .credit-package {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .credit-package:hover {
+            border-color: #56ab2f;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(86, 171, 47, 0.15);
+        }
+
+        .credit-package h4 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .package-credits {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #56ab2f;
+            margin-bottom: 10px;
+        }
+
+        .package-price {
+            font-size: 1.1em;
+            color: #666;
+            margin-bottom: 15px;
+        }
+
+        .package-badge {
+            background: #fbbf24;
+            color: #78350f;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            display: inline-block;
+            margin-bottom: 15px;
+        }
+
+        #invoice-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        #qr-code {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        #qr-code canvas {
+            border: 3px solid white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
     </style>
 </head>
 <body>
@@ -445,6 +509,7 @@
             <button class="tab" onclick="showTab('log', event)">Log</button>
             <button class="tab" onclick="showTab('clients', event)">Clients</button>
             <button class="tab" onclick="showTab('posters', event)">Posters</button>
+            <button class="tab" onclick="showTab('credits', event)">⚡ Credits</button>
             <button class="tab" onclick="showTab('about', event)">About</button>
         </div>
 
@@ -527,8 +592,72 @@
                 <li>✅ High performance with Go</li>
             </ul>
         </div>
+
+        <div id="credits-content" class="content-box">
+            <h2 style="margin-bottom: 20px;">⚡ Lightning Credits</h2>
+            <div id="credits-error" class="error-msg"></div>
+            <div id="credits-success" class="success-msg"></div>
+
+            <div id="lightning-disabled-message" style="display: none; padding: 30px; text-align: center; background: #f8f9fa; border-radius: 10px; border: 2px dashed #ddd;">
+                <div style="font-size: 3em; margin-bottom: 15px;">⚡</div>
+                <h3 style="margin-bottom: 10px; color: #666;">Lightning Payments Not Configured</h3>
+                <p style="color: #999; line-height: 1.6;">
+                    Lightning Network payments are not currently enabled on this server.<br>
+                    Contact your server administrator to enable Lightning payments.
+                </p>
+            </div>
+
+            <div id="lightning-enabled-ui">
+                <div class="stat-card" style="margin-bottom: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <div class="stat-title">Your Credits Balance</div>
+                    <div class="stat-value" id="credits-balance" style="color: white;">Loading...</div>
+                    <div class="stat-subvalue" id="credits-status" style="color: rgba(255,255,255,0.9);"></div>
+                </div>
+
+                <h3 style="margin-bottom: 15px;">Buy More Credits</h3>
+                <p style="color: #666; margin-bottom: 20px;">Purchase credits to increase your API request limit. Pay with Bitcoin Lightning Network.</p>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">
+                    <div class="credit-package" data-package="pack_1k">
+                        <h4>Starter Pack</h4>
+                        <div class="package-credits">1,000 requests</div>
+                        <div class="package-price">100 sats</div>
+                        <button class="btn-primary" onclick="buyCredits('pack_1k')">Buy Now</button>
+                    </div>
+                    <div class="credit-package" data-package="pack_10k">
+                        <h4>Popular Pack</h4>
+                        <div class="package-credits">10,000 requests</div>
+                        <div class="package-price">900 sats</div>
+                        <div class="package-badge">Save 10%</div>
+                        <button class="btn-primary" onclick="buyCredits('pack_10k')">Buy Now</button>
+                    </div>
+                    <div class="credit-package" data-package="pack_100k">
+                        <h4>Pro Pack</h4>
+                        <div class="package-credits">100,000 requests</div>
+                        <div class="package-price">8,000 sats</div>
+                        <div class="package-badge">Save 20%</div>
+                        <button class="btn-primary" onclick="buyCredits('pack_100k')">Buy Now</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="invoice-container" style="display: none; margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+                <h3 style="margin-bottom: 15px;">⚡ Pay Invoice</h3>
+                <div style="text-align: center; margin: 20px 0;">
+                    <div id="qr-code"></div>
+                </div>
+                <div style="margin: 20px 0;">
+                    <label style="font-weight: 500; margin-bottom: 5px; display: block;">Lightning Invoice:</label>
+                    <textarea id="invoice-text" readonly style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-family: monospace; font-size: 0.9em;" rows="4"></textarea>
+                </div>
+                <button class="btn-primary" onclick="copyInvoice()">📋 Copy Invoice</button>
+                <button class="btn-primary" style="background: #6c757d;" onclick="cancelInvoice()">Cancel</button>
+                <div id="payment-status" style="margin-top: 15px; text-align: center; font-weight: 500;"></div>
+            </div>
+        </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>
         let statsInterval;
         let pickupInterval;
@@ -620,6 +749,7 @@
             if (tabName === 'log') loadLog();
             if (tabName === 'clients') loadClients();
             if (tabName === 'posters') loadPosters();
+            if (tabName === 'credits') loadCredits();
             if (tabName === 'subscribe') startPickup();
             else stopPickup();
         }
@@ -1042,6 +1172,172 @@
         window.onbeforeunload = function() {
             stopPickup();
         };
+
+        // ======= Credits Functions =======
+        let currentInvoice = null;
+        let paymentCheckInterval = null;
+
+        async function loadCredits() {
+            try {
+                const response = await fetch(`${API_BASE}/api/credits`, {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa(username + ':' + password)
+                    }
+                });
+
+                if (!response.ok) {
+                    // Check if Lightning is not enabled
+                    const errorText = await response.text();
+                    if (errorText.includes('lightning payments not enabled')) {
+                        // Hide the normal UI, show disabled message
+                        document.getElementById('lightning-enabled-ui').style.display = 'none';
+                        document.getElementById('lightning-disabled-message').style.display = 'block';
+                        return;
+                    }
+                    throw new Error('Failed to fetch credits');
+                }
+
+                const data = await response.json();
+
+                // Show normal UI, hide disabled message
+                document.getElementById('lightning-enabled-ui').style.display = 'block';
+                document.getElementById('lightning-disabled-message').style.display = 'none';
+
+                const balanceEl = document.getElementById('credits-balance');
+                const statusEl = document.getElementById('credits-status');
+
+                if (data.unlimited) {
+                    balanceEl.textContent = '∞ Unlimited';
+                    statusEl.textContent = 'You have unlimited requests';
+                } else {
+                    balanceEl.textContent = data.credits.toLocaleString();
+                    statusEl.textContent = data.credits === 0 ? 'No credits remaining - purchase below' : 'requests remaining';
+                }
+            } catch (error) {
+                document.getElementById('credits-balance').textContent = 'Error';
+                document.getElementById('credits-status').textContent = error.message;
+            }
+        }
+
+        async function buyCredits(packageName) {
+            try {
+                document.getElementById('credits-error').style.display = 'none';
+
+                const response = await fetch(`${API_BASE}/api/buy_credits?package=${packageName}`, {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa(username + ':' + password)
+                    }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to create invoice');
+                }
+
+                const data = await response.json();
+                currentInvoice = data;
+
+                // Display invoice
+                document.getElementById('invoice-container').style.display = 'block';
+                document.getElementById('invoice-text').value = data.invoice;
+
+                // Generate QR code
+                const qrContainer = document.getElementById('qr-code');
+                qrContainer.innerHTML = '';
+                new QRCode(qrContainer, {
+                    text: data.invoice,
+                    width: 256,
+                    height: 256,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+
+                // Start checking payment status with expiry time
+                startPaymentCheck(data.charge_id, data.expires_at);
+
+                // Scroll to invoice
+                document.getElementById('invoice-container').scrollIntoView({ behavior: 'smooth' });
+            } catch (error) {
+                document.getElementById('credits-error').textContent = error.message;
+                document.getElementById('credits-error').style.display = 'block';
+            }
+        }
+
+        function startPaymentCheck(chargeId, expiresAt) {
+            if (paymentCheckInterval) clearInterval(paymentCheckInterval);
+
+            document.getElementById('payment-status').innerHTML = '⏳ Waiting for payment...';
+
+            // Calculate time remaining
+            const expiresAtMs = expiresAt * 1000; // Convert to milliseconds
+            const timeoutDuration = expiresAtMs - Date.now();
+
+            // Set a timeout to stop checking after invoice expires
+            const expiryTimeout = setTimeout(() => {
+                if (paymentCheckInterval) {
+                    clearInterval(paymentCheckInterval);
+                    document.getElementById('payment-status').innerHTML = '❌ Invoice expired. Please try again.';
+                }
+            }, Math.max(timeoutDuration, 0));
+
+            paymentCheckInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/api/check_invoice?charge_id=${chargeId}`, {
+                        headers: {
+                            'Authorization': 'Basic ' + btoa(username + ':' + password)
+                        }
+                    });
+
+                    if (!response.ok) return;
+                    const data = await response.json();
+
+                    if (data.status === 'paid') {
+                        clearInterval(paymentCheckInterval);
+                        clearTimeout(expiryTimeout);
+                        document.getElementById('payment-status').innerHTML = '✅ Payment successful! Credits added.';
+                        document.getElementById('credits-success').textContent = `Successfully added ${data.credits} credits!`;
+                        document.getElementById('credits-success').style.display = 'block';
+
+                        setTimeout(() => {
+                            cancelInvoice();
+                            loadCredits();
+                        }, 2000);
+                    } else if (data.status === 'expired') {
+                        clearInterval(paymentCheckInterval);
+                        clearTimeout(expiryTimeout);
+                        document.getElementById('payment-status').innerHTML = '❌ Invoice expired. Please try again.';
+                    }
+                } catch (error) {
+                    console.error('Payment check error:', error);
+                }
+            }, 3000); // Check every 3 seconds
+        }
+
+        function copyInvoice() {
+            const invoiceText = document.getElementById('invoice-text');
+            invoiceText.select();
+            document.execCommand('copy');
+
+            const statusEl = document.getElementById('payment-status');
+            const oldText = statusEl.innerHTML;
+            statusEl.innerHTML = '📋 Invoice copied to clipboard!';
+            setTimeout(() => {
+                statusEl.innerHTML = oldText;
+            }, 2000);
+        }
+
+        function cancelInvoice() {
+            if (paymentCheckInterval) {
+                clearInterval(paymentCheckInterval);
+                paymentCheckInterval = null;
+            }
+            document.getElementById('invoice-container').style.display = 'none';
+            document.getElementById('qr-code').innerHTML = '';
+            document.getElementById('invoice-text').value = '';
+            document.getElementById('payment-status').innerHTML = '';
+            currentInvoice = null;
+        }
     </script>
 </body>
 </html>
