@@ -1342,16 +1342,21 @@ func (s *Server) handleBuyCredits(conn net.Conn, params map[string]string, usern
 
 	if s.lightning.Provider == "lnbits" {
 		// Use LNBits
-		invoiceResp, err := s.lightning.LNBitsClient.CreateInvoice(tier.Sats, description, 3600)
+		expirySeconds := 3600
+		invoiceResp, err := s.lightning.LNBitsClient.CreateInvoice(tier.Sats, description, expirySeconds)
 		if err != nil {
 			s.logger.Printf("Failed to create LNBits invoice: %v", err)
 			s.sendError(conn, fmt.Errorf("failed to create invoice"))
 			return
 		}
 
-		// Parse expiry timestamp
-		expiryTime, _ := time.Parse(time.RFC3339, invoiceResp.Expiry)
-		expiresAt := expiryTime.Unix()
+		// Calculate expiry time (current time + expiry seconds)
+		// Don't parse from response as it may be in different format
+		now := time.Now()
+		expiresAt := now.Add(time.Duration(expirySeconds) * time.Second).Unix()
+
+		s.logger.Printf("Created LNBits invoice: payment_hash=%s, expires_at=%d (%s)",
+			invoiceResp.PaymentHash, expiresAt, time.Unix(expiresAt, 0).Format(time.RFC3339))
 
 		invoice = &LightningInvoice{
 			ChargeID:   invoiceResp.PaymentHash,
@@ -1361,7 +1366,7 @@ func (s *Server) handleBuyCredits(conn net.Conn, params map[string]string, usern
 			Status:     "pending",
 			Invoice:    invoiceResp.Bolt11,
 			ExpiresAt:  expiresAt,
-			CreatedAt:  time.Now().Unix(),
+			CreatedAt:  now.Unix(),
 			Processed:  false,
 		}
 
