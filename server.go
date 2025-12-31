@@ -834,6 +834,8 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 		switch path {
 		case "api/credits":
 			s.handleGetCredits(conn, queryParams, apiUsername)
+		case "api/packages":
+			s.handleGetPackages(conn, queryParams, apiUsername)
 		case "api/buy_credits":
 			s.handleBuyCredits(conn, queryParams, apiUsername)
 		case "api/check_invoice":
@@ -1569,10 +1571,45 @@ func (s *Server) handleLNBitsWebhook(conn net.Conn, req *http.Request) {
 func (s *Server) handleGetCredits(conn net.Conn, params map[string]string, username string) {
 	credits := s.userAuth.GetUserCredits(username)
 
-	s.sendPlainJSON(conn, map[string]interface{}{
+	response := map[string]interface{}{
 		"username":  username,
 		"credits":   credits,
 		"unlimited": credits == -1,
+	}
+
+	// Include packages if Lightning is enabled
+	if s.lightning != nil && s.lightning.Enabled && s.lightningCfg != nil {
+		packages := make(map[string]interface{})
+		for name, tier := range s.lightningCfg.Pricing {
+			packages[name] = map[string]interface{}{
+				"credits": tier.Credits,
+				"sats":    tier.Sats,
+			}
+		}
+		response["packages"] = packages
+	}
+
+	s.sendPlainJSON(conn, response)
+}
+
+func (s *Server) handleGetPackages(conn net.Conn, params map[string]string, username string) {
+	// Check if Lightning is enabled
+	if s.lightning == nil || !s.lightning.Enabled {
+		s.sendError(conn, fmt.Errorf("lightning payments not enabled"))
+		return
+	}
+
+	// Return available packages
+	packages := make(map[string]interface{})
+	for name, tier := range s.lightningCfg.Pricing {
+		packages[name] = map[string]interface{}{
+			"credits": tier.Credits,
+			"sats":    tier.Sats,
+		}
+	}
+
+	s.sendPlainJSON(conn, map[string]interface{}{
+		"packages": packages,
 	})
 }
 

@@ -617,27 +617,8 @@
                 <h3 style="margin-bottom: 15px;">Buy More Credits</h3>
                 <p style="color: #666; margin-bottom: 20px;">Purchase credits to increase your API request limit. Pay with Bitcoin Lightning Network.</p>
 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">
-                    <div class="credit-package" data-package="pack_1k">
-                        <h4>Starter Pack</h4>
-                        <div class="package-credits">1,000 requests</div>
-                        <div class="package-price">100 sats</div>
-                        <button class="btn-primary" onclick="buyCredits('pack_1k')">Buy Now</button>
-                    </div>
-                    <div class="credit-package" data-package="pack_10k">
-                        <h4>Popular Pack</h4>
-                        <div class="package-credits">10,000 requests</div>
-                        <div class="package-price">900 sats</div>
-                        <div class="package-badge">Save 10%</div>
-                        <button class="btn-primary" onclick="buyCredits('pack_10k')">Buy Now</button>
-                    </div>
-                    <div class="credit-package" data-package="pack_100k">
-                        <h4>Pro Pack</h4>
-                        <div class="package-credits">100,000 requests</div>
-                        <div class="package-price">8,000 sats</div>
-                        <div class="package-badge">Save 20%</div>
-                        <button class="btn-primary" onclick="buyCredits('pack_100k')">Buy Now</button>
-                    </div>
+                <div id="packages-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">
+                    <div class="loading">Loading packages...</div>
                 </div>
             </div>
 
@@ -1230,10 +1211,63 @@
                     balanceEl.textContent = data.credits.toLocaleString();
                     statusEl.textContent = data.credits === 0 ? 'No credits remaining - purchase below' : 'requests remaining';
                 }
+
+                // Load packages if available
+                if (data.packages) {
+                    renderPackages(data.packages);
+                }
             } catch (error) {
                 document.getElementById('credits-balance').textContent = 'Error';
                 document.getElementById('credits-status').textContent = error.message;
             }
+        }
+
+        function renderPackages(packages) {
+            const container = document.getElementById('packages-container');
+
+            if (!packages || Object.keys(packages).length === 0) {
+                container.innerHTML = '<div class="loading">No packages available</div>';
+                return;
+            }
+
+            // Convert packages object to array for sorting
+            const packageArray = Object.entries(packages).map(([name, pkg]) => ({
+                name: name,
+                credits: pkg.credits,
+                sats: pkg.sats,
+                pricePerCredit: pkg.sats / pkg.credits
+            }));
+
+            // Sort by credits (ascending)
+            packageArray.sort((a, b) => a.credits - b.credits);
+
+            // Calculate base price per credit (from smallest package)
+            const basePricePerCredit = packageArray[0].pricePerCredit;
+
+            // Generate package titles
+            const packageTitles = {
+                0: 'Starter Pack',
+                1: 'Popular Pack',
+                2: 'Pro Pack',
+                3: 'Enterprise Pack'
+            };
+
+            // Render packages
+            container.innerHTML = packageArray.map((pkg, index) => {
+                const savingsPercent = Math.round((1 - pkg.pricePerCredit / basePricePerCredit) * 100);
+                const showBadge = savingsPercent > 0;
+                const title = packageTitles[index] || `Pack ${index + 1}`;
+
+                return `
+                    <div class="credit-package" data-package="${escapeHtml(pkg.name)}">
+                        <h4>${title}</h4>
+                        <div class="package-credits">${pkg.credits.toLocaleString()} requests</div>
+                        <div class="package-price">${pkg.sats.toLocaleString()} sats</div>
+                        ${showBadge ? `<div class="package-badge">Save ${savingsPercent}%</div>` : ''}
+                        <button class="btn-primary" onclick="buyCredits('${escapeHtml(pkg.name)}')">Buy Now</button>
+                    </div>
+                `;
+            }).join('');
         }
 
         async function buyCredits(packageName) {
@@ -1287,8 +1321,26 @@
             document.getElementById('payment-status').innerHTML = '⏳ Waiting for payment...';
 
             // Calculate time remaining
+            // expiresAt is a unix timestamp in seconds
             const expiresAtMs = expiresAt * 1000; // Convert to milliseconds
-            const timeoutDuration = expiresAtMs - Date.now();
+            const now = Date.now();
+            const timeoutDuration = expiresAtMs - now;
+
+            // Debug log
+            console.log('Payment check started:', {
+                chargeId: chargeId,
+                expiresAt: expiresAt,
+                expiresAtMs: expiresAtMs,
+                now: now,
+                timeoutDuration: timeoutDuration,
+                expiresAtDate: new Date(expiresAtMs).toISOString()
+            });
+
+            // If already expired, show message immediately
+            if (timeoutDuration <= 0) {
+                document.getElementById('payment-status').innerHTML = '❌ Invoice expired. Please try again.';
+                return;
+            }
 
             // Set a timeout to stop checking after invoice expires
             const expiryTimeout = setTimeout(() => {
@@ -1296,7 +1348,7 @@
                     clearInterval(paymentCheckInterval);
                     document.getElementById('payment-status').innerHTML = '❌ Invoice expired. Please try again.';
                 }
-            }, Math.max(timeoutDuration, 0));
+            }, timeoutDuration);
 
             paymentCheckInterval = setInterval(async () => {
                 try {
