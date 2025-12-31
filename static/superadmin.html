@@ -311,6 +311,8 @@
 
         <div class="tabs" style="display: flex; gap: 10px; margin-bottom: 20px;">
             <button class="tab active" onclick="showTab('users')">👥 Users</button>
+            <button class="tab" onclick="showTab('clients')">🔌 Clients</button>
+            <button class="tab" onclick="showTab('ips')">🌐 IPs</button>
             <button class="tab" onclick="showTab('crooks')">🚫 Crooks</button>
             <button class="tab" onclick="showTab('log')">📋 Server Log</button>
         </div>
@@ -326,6 +328,22 @@
 
             <div id="users-container" class="user-grid">
                 <div class="loading">Loading users...</div>
+            </div>
+        </div>
+
+        <div class="card" id="clients-tab" style="display: none;">
+            <h2>All Connected Clients</h2>
+            <button class="btn btn-primary" onclick="loadAllClients()" style="margin-bottom: 20px;">🔄 Refresh Clients</button>
+            <div id="clients-container" class="user-grid">
+                <div class="loading">Loading clients...</div>
+            </div>
+        </div>
+
+        <div class="card" id="ips-tab" style="display: none;">
+            <h2>All Connected IPs</h2>
+            <button class="btn btn-primary" onclick="loadAllIPs()" style="margin-bottom: 20px;">🔄 Refresh IPs</button>
+            <div id="ips-container" class="user-grid">
+                <div class="loading">Loading IPs...</div>
             </div>
         </div>
 
@@ -623,6 +641,9 @@
                         </div>
                         <div class="user-actions">
                             ${user.username !== 'public' ? `
+                                <button class="btn btn-success" onclick="loginAsUser('${escapeHtml(user.username)}')">
+                                    🔑 Login as
+                                </button>
                                 <button class="btn btn-primary" onclick="editRateLimit('${escapeHtml(user.username)}', ${user.rate_limit || 0})">
                                     ⚙️ Rate Limit
                                 </button>
@@ -661,6 +682,19 @@
             return div.innerHTML;
         }
 
+        function loginAsUser(username) {
+            // Prompt for user's password
+            const password = prompt(`Enter password for user "${username}" to login as them:`);
+            if (!password) return;
+
+            // Store credentials in sessionStorage
+            sessionStorage.setItem('admin_login_username', username);
+            sessionStorage.setItem('admin_login_password', password);
+
+            // Open admin page in new tab
+            window.open('/admin', '_blank');
+        }
+
         function showTab(tabName) {
             // Update tab buttons
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
@@ -668,6 +702,8 @@
 
             // Show/hide content
             document.getElementById('users-tab').style.display = tabName === 'users' ? 'block' : 'none';
+            document.getElementById('clients-tab').style.display = tabName === 'clients' ? 'block' : 'none';
+            document.getElementById('ips-tab').style.display = tabName === 'ips' ? 'block' : 'none';
             document.getElementById('crooks-tab').style.display = tabName === 'crooks' ? 'block' : 'none';
             document.getElementById('log-tab').style.display = tabName === 'log' ? 'block' : 'none';
 
@@ -675,6 +711,10 @@
                 loadServerLog();
             } else if (tabName === 'crooks') {
                 loadCrooks();
+            } else if (tabName === 'clients') {
+                loadAllClients();
+            } else if (tabName === 'ips') {
+                loadAllIPs();
             }
         }
 
@@ -726,6 +766,114 @@
             } catch (error) {
                 console.error('Failed to load server log:', error);
                 container.innerHTML = '<div style="color: #ff6b6b;">Failed to load server log.</div>';
+            }
+        }
+
+        async function loadAllClients() {
+            const container = document.getElementById('clients-container');
+            container.innerHTML = '<div class="loading">Loading clients...</div>';
+
+            try {
+                const params = new URLSearchParams();
+                params.append('admin_password', encodeParam('admin123'));
+
+                const response = await fetch(`${API_BASE}/ADMIN/ALL_CLIENTS`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: params.toString()
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch clients');
+                }
+
+                const encoded = await response.text();
+                const decoded = decodeParam(encoded);
+                const data = JSON.parse(decoded);
+
+                if (!data.clients || data.clients.length === 0) {
+                    container.innerHTML = '<div class="loading">No clients connected</div>';
+                    return;
+                }
+
+                container.innerHTML = data.clients.map(client => `
+                    <div class="user-item">
+                        <div class="user-info">
+                            <div class="user-name">${escapeHtml(client.client_id)}</div>
+                            <div class="user-stats">
+                                <div class="user-stat-item">
+                                    <strong>User:</strong> ${escapeHtml(client.username)}
+                                </div>
+                                <div class="user-stat-item">
+                                    <strong>IP:</strong> ${escapeHtml(client.ip)}
+                                </div>
+                                <div class="user-stat-item">
+                                    <strong>Connected:</strong> ${escapeHtml(client.connected)}
+                                </div>
+                                <div class="user-stat-item">
+                                    <strong>Requests:</strong> ${client.requests}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load clients:', error);
+                container.innerHTML = '<div class="error">Failed to load clients</div>';
+            }
+        }
+
+        async function loadAllIPs() {
+            const container = document.getElementById('ips-container');
+            container.innerHTML = '<div class="loading">Loading IPs...</div>';
+
+            try {
+                const params = new URLSearchParams();
+                params.append('admin_password', encodeParam('admin123'));
+
+                const response = await fetch(`${API_BASE}/ADMIN/ALL_IPS`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: params.toString()
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch IPs');
+                }
+
+                const encoded = await response.text();
+                const decoded = decodeParam(encoded);
+                const data = JSON.parse(decoded);
+
+                if (!data.ips || data.ips.length === 0) {
+                    container.innerHTML = '<div class="loading">No IPs found</div>';
+                    return;
+                }
+
+                container.innerHTML = data.ips.map(ip => `
+                    <div class="user-item">
+                        <div class="user-info">
+                            <div class="user-name">${ip.active_client ? '🟢 ' : ''}${escapeHtml(ip.ip)}</div>
+                            <div class="user-stats">
+                                <div class="user-stat-item">
+                                    <strong>User:</strong> ${escapeHtml(ip.username)}
+                                </div>
+                                <div class="user-stat-item">
+                                    <strong>Last seen:</strong> ${escapeHtml(ip.last_seen)}
+                                </div>
+                                <div class="user-stat-item">
+                                    <strong>Requests:</strong> ${ip.requests}
+                                </div>
+                                <div class="user-stat-item">
+                                    <strong>Status:</strong> ${ip.active_client ? 'Active' : 'Inactive'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load IPs:', error);
+                container.innerHTML = '<div class="error">Failed to load IPs</div>';
             }
         }
 

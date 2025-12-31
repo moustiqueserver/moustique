@@ -28,6 +28,9 @@ var signupHTML string
 //go:embed static/moustique_logo.png
 var logoPNG []byte
 
+//go:embed static/robots.txt
+var robotsTxt string
+
 func (s *Server) ServeWebAdmin(conn net.Conn) {
 	s.sendHTML(conn, adminHTML)
 }
@@ -50,6 +53,10 @@ func (s *Server) ServeLanding(conn net.Conn) {
 
 func (s *Server) ServeLogo(conn net.Conn) {
 	s.sendPNG(conn, logoPNG)
+}
+
+func (s *Server) ServeRobotsTxt(conn net.Conn) {
+	s.sendText(conn, robotsTxt)
 }
 
 /*o:embed static/admin.html

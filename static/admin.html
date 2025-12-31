@@ -1160,6 +1160,23 @@
         }
 
         window.onload = function() {
+            // Check for "login as user" credentials from superadmin
+            const adminLoginUser = sessionStorage.getItem('admin_login_username');
+            const adminLoginPwd = sessionStorage.getItem('admin_login_password');
+
+            if (adminLoginUser && adminLoginPwd) {
+                // Clear the credentials immediately so we don't auto-login again
+                sessionStorage.removeItem('admin_login_username');
+                sessionStorage.removeItem('admin_login_password');
+
+                // Auto-login with these credentials
+                document.getElementById('username').value = adminLoginUser;
+                document.getElementById('password').value = adminLoginPwd;
+                handleLogin({preventDefault: () => {}});
+                return;
+            }
+
+            // Fall back to checking normal saved credentials
             const savedUser = sessionStorage.getItem('moustique_user');
             const savedPwd = sessionStorage.getItem('moustique_pwd');
             if (savedUser && savedPwd) {

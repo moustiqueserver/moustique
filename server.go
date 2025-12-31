@@ -770,6 +770,9 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	case "moustique_logo.png":
 		s.ServeLogo(conn)
 		return
+	case "robots.txt":
+		s.ServeRobotsTxt(conn)
+		return
 	}
 
 	// Webhook endpoint for Lightning payment notifications (no auth required)
@@ -862,6 +865,10 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 			s.handleAdminGetRateLimit(conn, params)
 		case "ADMIN/SERVER_LOG":
 			s.GetRecentLogs(conn, 100)
+		case "ADMIN/ALL_CLIENTS":
+			s.handleAdminAllClients(conn, params)
+		case "ADMIN/ALL_IPS":
+			s.handleAdminAllIPs(conn, params)
 		default:
 			s.sendNotFound(conn)
 		}
@@ -1811,6 +1818,80 @@ func (s *Server) handleAdminGetRateLimit(conn net.Conn, params map[string]string
 	})
 }
 
+func (s *Server) handleAdminAllClients(conn net.Conn, params map[string]string) {
+	type ClientInfo struct {
+		Username  string `json:"username"`
+		ClientID  string `json:"client_id"`
+		IP        string `json:"ip"`
+		Connected string `json:"connected"`
+		Requests  int    `json:"requests"`
+	}
+
+	var allClients []ClientInfo
+
+	s.brokerManager.mu.RLock()
+	for username, broker := range s.brokerManager.brokers {
+		clients := broker.GetClients()
+		for _, client := range clients {
+			allClients = append(allClients, ClientInfo{
+				Username:  username,
+				ClientID:  client.Name,
+				IP:        client.IP,
+				Connected: client.FirstSeenNiceDatetime,
+				Requests:  client.RequestCounter,
+			})
+		}
+	}
+	s.brokerManager.mu.RUnlock()
+
+	s.sendJSON(conn, map[string]interface{}{
+		"clients": allClients,
+		"total":   len(allClients),
+	})
+}
+
+func (s *Server) handleAdminAllIPs(conn net.Conn, params map[string]string) {
+	type IPInfo struct {
+		IP           string `json:"ip"`
+		Username     string `json:"username"`
+		LastSeen     string `json:"last_seen"`
+		Requests     int    `json:"requests"`
+		ActiveClient bool   `json:"active_client"`
+	}
+
+	ipMap := make(map[string]*IPInfo)
+
+	// Collect IPs from all active clients
+	s.brokerManager.mu.RLock()
+	for username, broker := range s.brokerManager.brokers {
+		clients := broker.GetClients()
+		for _, client := range clients {
+			if client.IP != "" {
+				key := client.IP + ":" + username
+				ipMap[key] = &IPInfo{
+					IP:           client.IP,
+					Username:     username,
+					LastSeen:     client.FirstSeenNiceDatetime,
+					Requests:     client.RequestCounter,
+					ActiveClient: true,
+				}
+			}
+		}
+	}
+	s.brokerManager.mu.RUnlock()
+
+	// Convert map to slice
+	var allIPs []IPInfo
+	for _, ipInfo := range ipMap {
+		allIPs = append(allIPs, *ipInfo)
+	}
+
+	s.sendJSON(conn, map[string]interface{}{
+		"ips":   allIPs,
+		"total": len(allIPs),
+	})
+}
+
 // Response helpers
 
 func (s *Server) sendOK(conn net.Conn) {
@@ -1875,6 +1956,14 @@ func (s *Server) sendPNG(conn net.Conn, png []byte) {
 	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(png))
 	fmt.Fprintf(conn, "\r\n")
 	conn.Write(png)
+}
+
+func (s *Server) sendText(conn net.Conn, text string) {
+	fmt.Fprintf(conn, "HTTP/1.0 200 OK\r\n")
+	fmt.Fprintf(conn, "Content-Type: text/plain\r\n")
+	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(text))
+	fmt.Fprintf(conn, "\r\n")
+	fmt.Fprintf(conn, "%s", text)
 }
 
 func (s *Server) sendNotFound(conn net.Conn) {
