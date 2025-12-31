@@ -850,27 +850,33 @@
                     return;
                 }
 
-                container.innerHTML = data.ips.map(ip => `
-                    <div class="user-item">
-                        <div class="user-info">
-                            <div class="user-name">${ip.active_client ? '🟢 ' : ''}${escapeHtml(ip.ip)}</div>
-                            <div class="user-stats">
-                                <div class="user-stat-item">
-                                    <strong>User:</strong> ${escapeHtml(ip.username)}
-                                </div>
-                                <div class="user-stat-item">
-                                    <strong>Last seen:</strong> ${escapeHtml(ip.last_seen)}
-                                </div>
-                                <div class="user-stat-item">
-                                    <strong>Requests:</strong> ${ip.requests}
-                                </div>
-                                <div class="user-stat-item">
-                                    <strong>Status:</strong> ${ip.active_client ? 'Active' : 'Inactive'}
+                container.innerHTML = data.ips.map(ip => {
+                    const usersDisplay = ip.usernames && ip.usernames.length > 0
+                        ? ip.usernames.map(u => escapeHtml(u)).join(', ')
+                        : 'Anonymous';
+
+                    return `
+                        <div class="user-item">
+                            <div class="user-info">
+                                <div class="user-name">${ip.active_client ? '🟢 ' : ''}${escapeHtml(ip.ip)}</div>
+                                <div class="user-stats">
+                                    <div class="user-stat-item">
+                                        <strong>Users:</strong> ${usersDisplay}
+                                    </div>
+                                    <div class="user-stat-item">
+                                        <strong>Last seen:</strong> ${escapeHtml(ip.last_seen)}
+                                    </div>
+                                    <div class="user-stat-item">
+                                        <strong>Requests:</strong> ${ip.requests.toLocaleString()}
+                                    </div>
+                                    <div class="user-stat-item">
+                                        <strong>Status:</strong> ${ip.active_client ? 'Active' : 'Inactive'}
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             } catch (error) {
                 console.error('Failed to load IPs:', error);
                 container.innerHTML = '<div class="error">Failed to load IPs</div>';

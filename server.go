@@ -404,6 +404,7 @@ type Server struct {
 	userAuth       *UserAuth
 	security       *SecurityChecker
 	rateLimiter    *RateLimiter
+	ipStats        *IPStats
 	lightning      *LightningRuntime
 	lightningDB    *LightningDB
 	lightningCfg   *LightningConfig
@@ -504,6 +505,7 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 		userAuth:       userAuth,
 		security:       NewSecurityChecker(allowedPeers),
 		rateLimiter:    NewRateLimiter(defaultRateLimit, dataDir),
+		ipStats:        NewIPStats(),
 		lightning:      lightningRuntime,
 		lightningDB:    lightningDB,
 		lightningCfg:   lightningCfg,
@@ -684,6 +686,9 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	start := time.Now()
 	statusCode := 200 // default to 200 OK
 	var username string
+
+	// Record IP statistics
+	s.ipStats.RecordRequest(peerHost)
 
 	// Defer access logging
 	defer func() {
@@ -1894,38 +1899,51 @@ func (s *Server) handleAdminAllClients(conn net.Conn, params map[string]string) 
 
 func (s *Server) handleAdminAllIPs(conn net.Conn, params map[string]string) {
 	type IPInfo struct {
-		IP           string `json:"ip"`
-		Username     string `json:"username"`
-		LastSeen     string `json:"last_seen"`
-		Requests     int    `json:"requests"`
-		ActiveClient bool   `json:"active_client"`
+		IP           string   `json:"ip"`
+		Usernames    []string `json:"usernames"`
+		LastSeen     string   `json:"last_seen"`
+		Requests     int64    `json:"requests"`
+		ActiveClient bool     `json:"active_client"`
 	}
 
-	ipMap := make(map[string]*IPInfo)
+	// Get all IPs from global stats
+	allIPStats := s.ipStats.GetAllIPs()
 
-	// Collect IPs from all active clients
+	// Create a map to track which IPs have active clients
+	activeIPs := make(map[string]map[string]bool) // IP -> username -> true
+
+	// Collect active clients from all brokers
 	s.brokerManager.mu.RLock()
 	for username, broker := range s.brokerManager.brokers {
 		clients := broker.GetClients()
 		for _, client := range clients {
 			if client.IP != "" {
-				key := client.IP + ":" + username
-				ipMap[key] = &IPInfo{
-					IP:           client.IP,
-					Username:     username,
-					LastSeen:     client.FirstSeenNiceDatetime,
-					Requests:     client.RequestCounter,
-					ActiveClient: true,
+				if activeIPs[client.IP] == nil {
+					activeIPs[client.IP] = make(map[string]bool)
 				}
+				activeIPs[client.IP][username] = true
 			}
 		}
 	}
 	s.brokerManager.mu.RUnlock()
 
-	// Convert map to slice
+	// Build response
 	var allIPs []IPInfo
-	for _, ipInfo := range ipMap {
-		allIPs = append(allIPs, *ipInfo)
+	for _, ipStat := range allIPStats {
+		usernames := []string{}
+		if users, hasActive := activeIPs[ipStat.IP]; hasActive {
+			for username := range users {
+				usernames = append(usernames, username)
+			}
+		}
+
+		allIPs = append(allIPs, IPInfo{
+			IP:           ipStat.IP,
+			Usernames:    usernames,
+			LastSeen:     ipStat.LastSeenString,
+			Requests:     ipStat.RequestCount,
+			ActiveClient: len(usernames) > 0,
+		})
 	}
 
 	s.sendJSON(conn, map[string]interface{}{
