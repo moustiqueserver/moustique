@@ -160,10 +160,13 @@ func (b *Broker) SetSystemEventsBroker(broker *Broker, username string) {
 
 // publishSystemEvent publishes an event to the system events broker if configured
 func (b *Broker) publishSystemEvent(topic string, data map[string]interface{}) {
-	if b.systemEventsBroker != nil {
-		message := formatJSON(data)
-		b.systemEventsBroker.PublishSystemMessage(topic, message)
+	// Skip if no system events broker configured, or if we ARE the system events broker
+	// (to avoid deadlock from recursive lock)
+	if b.systemEventsBroker == nil || b.systemEventsBroker == b {
+		return
 	}
+	message := formatJSON(data)
+	b.systemEventsBroker.PublishSystemMessage(topic, message)
 }
 
 // Subscribe adds a client subscription to a topic

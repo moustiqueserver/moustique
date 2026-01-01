@@ -1618,6 +1618,19 @@ func (s *Server) processPayment(invoice *LightningInvoice) {
 	invoice.Processed = true
 
 	s.logger.Printf("Payment processed: %s received %d credits (%d sats)", invoice.Username, invoice.Credits, invoice.AmountSats)
+
+	// Publish system event for purchase
+	if s.systemEventsBroker != nil {
+		message := formatJSON(map[string]interface{}{
+			"username":    invoice.Username,
+			"credits":     invoice.Credits,
+			"amount_sats": invoice.AmountSats,
+			"charge_id":   invoice.ChargeID,
+			"paid_at":     formatNiceDateTime(paidAt),
+			"timestamp":   paidAt,
+		})
+		s.systemEventsBroker.PublishSystemMessage("/system/event/purchase/completed", message)
+	}
 }
 
 // handleLNBitsWebhook handles webhook notifications from LNBits
