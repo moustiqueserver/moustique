@@ -692,9 +692,15 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 
 	// Defer access logging
 	defer func() {
+		duration := float64(time.Since(start).Nanoseconds()) / 1e6 // milliseconds
+
+		// Log to access logger if available
 		if s.accessLogger != nil {
-			duration := float64(time.Since(start).Nanoseconds()) / 1e6 // milliseconds
 			s.accessLogger.LogAccess(peerHost, req.Method, req.URL.Path, username, statusCode, duration)
+		} else {
+			// Fallback to main logger if access logger is not available
+			s.logger.Printf("ACCESS %s %s %s user=%s status=%d duration=%.2fms",
+				peerHost, req.Method, req.URL.Path, username, statusCode, duration)
 		}
 	}()
 
