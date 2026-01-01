@@ -1508,6 +1508,19 @@ func (s *Server) handleBuyCredits(conn net.Conn, params map[string]string, usern
 		return
 	}
 
+	// Publish system event for invoice created
+	if s.systemEventsBroker != nil {
+		s.systemEventsBroker.PublishSystemMessage("/system/event/invoice/created", formatJSON(map[string]interface{}{
+			"username":    username,
+			"package":     packageName,
+			"credits":     tier.Credits,
+			"amount_sats": tier.Sats,
+			"charge_id":   invoice.ChargeID,
+			"expires_at":  invoice.ExpiresAt,
+			"timestamp":   invoice.CreatedAt,
+		}))
+	}
+
 	// Return invoice to user
 	s.sendPlainJSON(conn, responseData)
 }
