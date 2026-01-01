@@ -34,12 +34,13 @@ func NewIPStats(logger *log.Logger, systemBroker *Broker) *IPStats {
 
 // RecordRequest records a request from an IP address
 func (s *IPStats) RecordRequest(ip string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	now := time.Now().Unix()
 	nowStr := formatNiceDateTime(now)
+	var isNewIP bool
+	var systemBroker *Broker
 
+	// Phase 1: Update state while holding lock
+	s.mu.Lock()
 	if info, exists := s.requests[ip]; exists {
 		info.RequestCount++
 		info.LastSeen = now
@@ -53,21 +54,24 @@ func (s *IPStats) RecordRequest(ip string) {
 			LastSeen:       now,
 			LastSeenString: nowStr,
 		}
+		isNewIP = true
+		systemBroker = s.systemBroker
 
 		// Log new IP
 		if s.logger != nil {
 			s.logger.Printf("🔵 NEW IP: %s first seen at %s", ip, nowStr)
 		}
+	}
+	s.mu.Unlock()
 
-		// Publish system event (subscription-based, not broadcast)
-		if s.systemBroker != nil {
-			message := formatJSON(map[string]interface{}{
-				"ip":         ip,
-				"first_seen": nowStr,
-				"timestamp":  now,
-			})
-			s.systemBroker.PublishEvent("/system/event/ip/new", message)
-		}
+	// Phase 2: Publish event without holding lock (avoids potential deadlock)
+	if isNewIP && systemBroker != nil {
+		message := formatJSON(map[string]interface{}{
+			"ip":         ip,
+			"first_seen": nowStr,
+			"timestamp":  now,
+		})
+		systemBroker.PublishEvent("/system/event/ip/new", message)
 	}
 }
 
