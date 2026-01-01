@@ -11,6 +11,9 @@ import (
 //go:embed static/landing/moustique_logo.png
 var moustiqueLogo []byte
 
+//go:embed static/landing/admin.png
+var adminPng []byte
+
 // StartLandingServer starts the HTTP server on port 80 for the landing page
 func StartLandingServer(ctx context.Context, logger *log.Logger) error {
 	mux := http.NewServeMux()
@@ -40,6 +43,13 @@ func StartLandingServer(ctx context.Context, logger *log.Logger) error {
 		w.Header().Set("Content-Type", "image/png")
 		w.WriteHeader(http.StatusOK)
 		w.Write(moustiqueLogo)
+	})
+
+	// Serve admin screenshot
+	mux.HandleFunc("/admin.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.WriteHeader(http.StatusOK)
+		w.Write(adminPng)
 	})
 
 	server := &http.Server{
