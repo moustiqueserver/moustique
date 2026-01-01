@@ -157,14 +157,14 @@ func (bm *BrokerManager) GetOrCreateBroker(username string) (*Broker, error) {
 	bm.logger.Printf("🆕 NEW BROKER: Created broker instance for user: %s", username)
 	broker.LogUser("Broker initialized")
 
-	// Publish system event to system events broker (if configured)
+	// Publish system event to system events broker (subscription-based)
 	if bm.systemEventsBroker != nil {
 		message := formatJSON(map[string]interface{}{
 			"username":  username,
 			"timestamp": time.Now().Unix(),
 			"created":   formatNiceDateTime(time.Now().Unix()),
 		})
-		bm.systemEventsBroker.PublishSystemMessage("/system/event/broker/created", message)
+		bm.systemEventsBroker.PublishEvent("/system/event/broker/created", message)
 	}
 
 	return broker, nil
@@ -1508,9 +1508,9 @@ func (s *Server) handleBuyCredits(conn net.Conn, params map[string]string, usern
 		return
 	}
 
-	// Publish system event for invoice created
+	// Publish system event for invoice created (subscription-based)
 	if s.systemEventsBroker != nil {
-		s.systemEventsBroker.PublishSystemMessage("/system/event/invoice/created", formatJSON(map[string]interface{}{
+		s.systemEventsBroker.PublishEvent("/system/event/invoice/created", formatJSON(map[string]interface{}{
 			"username":    username,
 			"package":     packageName,
 			"credits":     tier.Credits,
@@ -1632,7 +1632,7 @@ func (s *Server) processPayment(invoice *LightningInvoice) {
 
 	s.logger.Printf("Payment processed: %s received %d credits (%d sats)", invoice.Username, invoice.Credits, invoice.AmountSats)
 
-	// Publish system event for purchase
+	// Publish system event for purchase (subscription-based)
 	if s.systemEventsBroker != nil {
 		message := formatJSON(map[string]interface{}{
 			"username":    invoice.Username,
@@ -1642,7 +1642,7 @@ func (s *Server) processPayment(invoice *LightningInvoice) {
 			"paid_at":     formatNiceDateTime(paidAt),
 			"timestamp":   paidAt,
 		})
-		s.systemEventsBroker.PublishSystemMessage("/system/event/purchase/completed", message)
+		s.systemEventsBroker.PublishEvent("/system/event/purchase/completed", message)
 	}
 }
 

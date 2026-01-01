@@ -159,6 +159,7 @@ func (b *Broker) SetSystemEventsBroker(broker *Broker, username string) {
 }
 
 // publishSystemEvent publishes an event to the system events broker if configured
+// Uses PublishEvent for subscription-based routing (not broadcast)
 func (b *Broker) publishSystemEvent(topic string, data map[string]interface{}) {
 	// Skip if no system events broker configured, or if we ARE the system events broker
 	// (to avoid deadlock from recursive lock)
@@ -166,7 +167,7 @@ func (b *Broker) publishSystemEvent(topic string, data map[string]interface{}) {
 		return
 	}
 	message := formatJSON(data)
-	b.systemEventsBroker.PublishSystemMessage(topic, message)
+	b.systemEventsBroker.PublishEvent(topic, message)
 }
 
 // Subscribe adds a client subscription to a topic
@@ -352,7 +353,8 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	return nil
 }
 
-// PublishSystemMessage publishes a system message that will be delivered to all clients
+// PublishSystemMessage publishes a system message that will be delivered to all clients (broadcast)
+// Use this for /server/action/* messages like resubscribe
 func (b *Broker) PublishSystemMessage(topic, message string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -374,6 +376,46 @@ func (b *Broker) PublishSystemMessage(topic, message string) {
 		b.logger.Printf("Published system message to topic: %s", topic)
 	}
 	b.LogUser("Published system message to topic: %s", topic)
+}
+
+// PublishEvent publishes an event to subscribers (subscription-based routing)
+// Use this for /system/event/* messages - only delivered to clients who subscribed
+// This method is safe to call from another broker (no deadlock with self)
+func (b *Broker) PublishEvent(topic, message string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	now := time.Now().Unix()
+	msg := &Message{
+		From:                "SYSTEM",
+		Topic:               topic,
+		Message:             message,
+		UpdatedTime:         now,
+		UpdatedNiceDatetime: formatNiceDateTime(now),
+		Subscribers:         make(map[string]bool),
+		IP:                  "127.0.0.1",
+	}
+
+	// Find matching subscribers using topic explosion (supports wildcards like +, #)
+	topics := b.explodeTopic(topic)
+	topics = append(topics, "#")
+
+	for _, wildcardTopic := range topics {
+		if clients, ok := b.subscriptions[wildcardTopic]; ok {
+			for _, clientName := range clients {
+				if b.messageQueue[clientName] == nil {
+					b.messageQueue[clientName] = make(map[string][]*Message)
+				}
+				b.messageQueue[clientName][wildcardTopic] = append(
+					b.messageQueue[clientName][wildcardTopic], msg)
+				msg.Subscribers[clientName] = true
+			}
+		}
+	}
+
+	if b.debug && len(msg.Subscribers) > 0 {
+		b.logger.Printf("Published event to topic %s (%d subscribers)", topic, len(msg.Subscribers))
+	}
 }
 
 // Pickup retrieves messages for a client
@@ -751,9 +793,9 @@ func (b *Broker) kickInactiveClients() {
 			"reason":    "inactivity",
 		}))
 
-		// Publish to system events broker (for admin monitoring)
+		// Publish to system events broker (for admin monitoring, subscription-based)
 		if b.systemEventsBroker != nil && b.systemEventsBroker != b {
-			b.systemEventsBroker.PublishSystemMessage("/system/event/client/kicked", formatJSON(map[string]interface{}{
+			b.systemEventsBroker.PublishEvent("/system/event/client/kicked", formatJSON(map[string]interface{}{
 				"broker":    brokerUsername,
 				"client_id": kicked.name,
 				"ip":        kicked.ip,
@@ -940,9 +982,9 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 			fmt.Sprintf("Unauthorized connection attempt from %s (reason: %s)", ip, reason),
 		)
 
-		// Publish to system events broker
+		// Publish to system events broker (subscription-based)
 		if systemEventsBroker != nil && systemEventsBroker != b {
-			systemEventsBroker.PublishSystemMessage("/system/event/crook/new", formatJSON(map[string]interface{}{
+			systemEventsBroker.PublishEvent("/system/event/crook/new", formatJSON(map[string]interface{}{
 				"broker":     brokerUsername,
 				"ip":         eventInfo.ip,
 				"reason":     eventInfo.reason,
@@ -954,7 +996,7 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 
 	if eventInfo.isBanned {
 		if systemEventsBroker != nil && systemEventsBroker != b {
-			systemEventsBroker.PublishSystemMessage("/system/event/ip/banned", formatJSON(map[string]interface{}{
+			systemEventsBroker.PublishEvent("/system/event/ip/banned", formatJSON(map[string]interface{}{
 				"broker":    brokerUsername,
 				"ip":        eventInfo.ip,
 				"reason":    eventInfo.reason,

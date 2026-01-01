@@ -59,14 +59,14 @@ func (s *IPStats) RecordRequest(ip string) {
 			s.logger.Printf("🔵 NEW IP: %s first seen at %s", ip, nowStr)
 		}
 
-		// Publish system event
+		// Publish system event (subscription-based, not broadcast)
 		if s.systemBroker != nil {
 			message := formatJSON(map[string]interface{}{
 				"ip":         ip,
 				"first_seen": nowStr,
 				"timestamp":  now,
 			})
-			s.systemBroker.PublishSystemMessage("/system/event/ip/new", message)
+			s.systemBroker.PublishEvent("/system/event/ip/new", message)
 		}
 	}
 }
