@@ -1,14 +1,17 @@
 package main
 
 import (
+	"log"
 	"sync"
 	"time"
 )
 
 // IPStats tracks request statistics per IP address
 type IPStats struct {
-	mu         sync.RWMutex
-	requests   map[string]*IPRequestInfo // IP -> request info
+	mu            sync.RWMutex
+	requests      map[string]*IPRequestInfo // IP -> request info
+	logger        *log.Logger
+	systemBroker  *Broker // Broker to publish system events to
 }
 
 // IPRequestInfo holds request information for an IP address
@@ -21,9 +24,11 @@ type IPRequestInfo struct {
 }
 
 // NewIPStats creates a new IP statistics tracker
-func NewIPStats() *IPStats {
+func NewIPStats(logger *log.Logger, systemBroker *Broker) *IPStats {
 	return &IPStats{
-		requests: make(map[string]*IPRequestInfo),
+		requests:     make(map[string]*IPRequestInfo),
+		logger:       logger,
+		systemBroker: systemBroker,
 	}
 }
 
@@ -40,12 +45,28 @@ func (s *IPStats) RecordRequest(ip string) {
 		info.LastSeen = now
 		info.LastSeenString = nowStr
 	} else {
+		// New IP detected!
 		s.requests[ip] = &IPRequestInfo{
 			IP:             ip,
 			RequestCount:   1,
 			FirstSeen:      now,
 			LastSeen:       now,
 			LastSeenString: nowStr,
+		}
+
+		// Log new IP
+		if s.logger != nil {
+			s.logger.Printf("🔵 NEW IP: %s first seen at %s", ip, nowStr)
+		}
+
+		// Publish system event
+		if s.systemBroker != nil {
+			message := formatJSON(map[string]interface{}{
+				"ip":         ip,
+				"first_seen": nowStr,
+				"timestamp":  now,
+			})
+			s.systemBroker.PublishSystemMessage("/system/event/ip/new", message)
 		}
 	}
 }
@@ -68,6 +89,13 @@ func (s *IPStats) GetAllIPs() []*IPRequestInfo {
 	}
 
 	return result
+}
+
+// SetSystemBroker sets the system broker for publishing events
+func (s *IPStats) SetSystemBroker(broker *Broker) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.systemBroker = broker
 }
 
 // GetIPInfo returns request information for a specific IP

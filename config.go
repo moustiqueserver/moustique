@@ -10,11 +10,19 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Server    ServerConfig    `yaml:"server"`
-	Database  DatabaseConfig  `yaml:"database"`
-	Logging   LoggingConfig   `yaml:"logging"`
-	Security  SecurityConfig  `yaml:"security"`
-	Lightning LightningConfig `yaml:"lightning"`
+	Server       ServerConfig       `yaml:"server"`
+	Database     DatabaseConfig     `yaml:"database"`
+	Logging      LoggingConfig      `yaml:"logging"`
+	Security     SecurityConfig     `yaml:"security"`
+	Lightning    LightningConfig    `yaml:"lightning"`
+	SystemEvents SystemEventsConfig `yaml:"system_events"`
+}
+
+// SystemEventsConfig represents configuration for system event publishing
+type SystemEventsConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 // ServerConfig represents server configuration
@@ -149,6 +157,11 @@ func GenerateDefaultConfig(path string) error {
 			DefaultRateLimit:   1000,            // 1000 requests per minute
 			Fail2banJail:       "moustique",
 			Fail2banLevel:      "normal", // strict, normal, relaxed, minimal
+		},
+		SystemEvents: SystemEventsConfig{
+			Enabled:  false,
+			Username: "",
+			Password: "",
 		},
 	}
 

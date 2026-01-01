@@ -24,14 +24,15 @@ import (
 
 // BrokerManager manages per-user broker instances
 type BrokerManager struct {
-	brokers       map[string]*Broker
-	mu            sync.RWMutex
-	logger        *log.Logger
-	dataDir       string
-	defaultBroker *Broker
-	ctx           context.Context
-	fail2banJail  string
-	fail2banLevel string
+	brokers            map[string]*Broker
+	mu                 sync.RWMutex
+	logger             *log.Logger
+	dataDir            string
+	defaultBroker      *Broker
+	systemEventsBroker *Broker
+	ctx                context.Context
+	fail2banJail       string
+	fail2banLevel      string
 }
 
 // NewBrokerManager creates a new broker manager
@@ -139,6 +140,12 @@ func (bm *BrokerManager) GetOrCreateBroker(username string) (*Broker, error) {
 	// Create broker
 	broker := NewBroker(bm.logger, db, false, bm.fail2banJail, bm.fail2banLevel)
 	broker.SetUserLogger(userLogger, userLogPath)
+
+	// Set system events broker so this broker can publish system-wide events
+	if bm.systemEventsBroker != nil {
+		broker.SetSystemEventsBroker(bm.systemEventsBroker, username)
+	}
+
 	bm.brokers[username] = broker
 
 	// Publish resubscribe system message for clients to re-register
@@ -147,8 +154,19 @@ func (bm *BrokerManager) GetOrCreateBroker(username string) (*Broker, error) {
 	// Start maintenance for this user's broker
 	go broker.StartMaintenance(bm.ctx)
 
-	bm.logger.Printf("Created broker instance for user: %s", username)
+	bm.logger.Printf("🆕 NEW BROKER: Created broker instance for user: %s", username)
 	broker.LogUser("Broker initialized")
+
+	// Publish system event to system events broker (if configured)
+	if bm.systemEventsBroker != nil {
+		message := formatJSON(map[string]interface{}{
+			"username":  username,
+			"timestamp": time.Now().Unix(),
+			"created":   formatNiceDateTime(time.Now().Unix()),
+		})
+		bm.systemEventsBroker.PublishSystemMessage("/system/event/broker/created", message)
+	}
+
 	return broker, nil
 }
 
@@ -162,6 +180,23 @@ func (bm *BrokerManager) GetBroker(username string) *Broker {
 // GetDefaultBroker returns the public/default broker
 func (bm *BrokerManager) GetDefaultBroker() *Broker {
 	return bm.defaultBroker
+}
+
+// SetSystemEventsBroker sets the broker used for publishing system events
+func (bm *BrokerManager) SetSystemEventsBroker(broker *Broker) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	bm.systemEventsBroker = broker
+
+	// Update all existing brokers to use this system events broker
+	for username, b := range bm.brokers {
+		b.SetSystemEventsBroker(broker, username)
+	}
+
+	// Also update the default broker if it exists
+	if bm.defaultBroker != nil {
+		bm.defaultBroker.SetSystemEventsBroker(broker, "public")
+	}
 }
 
 // GetAllUsers returns list of all active users
@@ -395,29 +430,31 @@ func hashPassword(password string) string {
 
 // Server handles HTTP connections
 type Server struct {
-	port           int
-	timeout        time.Duration
-	logger         *log.Logger
-	accessLogger   *RotatingLogger
-	errorLogger    *RotatingLogger
-	brokerManager  *BrokerManager
-	userAuth       *UserAuth
-	security       *SecurityChecker
-	rateLimiter    *RateLimiter
-	ipStats        *IPStats
-	lightning      *LightningRuntime
-	lightningDB    *LightningDB
-	lightningCfg   *LightningConfig
-	debug          bool
-	version        string
-	allowPublic    bool
-	maxRequestSize int64
-	maxTopicLength int
-	maxMessageSize int64
+	port               int
+	timeout            time.Duration
+	logger             *log.Logger
+	accessLogger       *RotatingLogger
+	errorLogger        *RotatingLogger
+	brokerManager      *BrokerManager
+	userAuth           *UserAuth
+	security           *SecurityChecker
+	rateLimiter        *RateLimiter
+	ipStats            *IPStats
+	lightning          *LightningRuntime
+	lightningDB        *LightningDB
+	lightningCfg       *LightningConfig
+	systemEventsCfg    *SystemEventsConfig
+	systemEventsBroker *Broker
+	debug              bool
+	version            string
+	allowPublic        bool
+	maxRequestSize     int64
+	maxTopicLength     int
+	maxMessageSize     int64
 }
 
 // NewServer creates a new HTTP server
-func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, allowedPeers []string, maxRequestSize int64, maxTopicLength int, maxMessageSize int64, defaultRateLimit int, fail2banJail string, fail2banLevel string, logDir string, lightningCfg *LightningConfig) (*Server, error) {
+func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, allowedPeers []string, maxRequestSize int64, maxTopicLength int, maxMessageSize int64, defaultRateLimit int, fail2banJail string, fail2banLevel string, logDir string, lightningCfg *LightningConfig, systemEventsCfg *SystemEventsConfig) (*Server, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
@@ -496,25 +533,27 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 	}
 
 	return &Server{
-		port:           port,
-		timeout:        timeout,
-		logger:         logger,
-		accessLogger:   accessLogger,
-		errorLogger:    errorLogger,
-		brokerManager:  NewBrokerManager(logger, dataDir, allowPublic, fail2banJail, fail2banLevel),
-		userAuth:       userAuth,
-		security:       NewSecurityChecker(allowedPeers),
-		rateLimiter:    NewRateLimiter(defaultRateLimit, dataDir),
-		ipStats:        NewIPStats(),
-		lightning:      lightningRuntime,
-		lightningDB:    lightningDB,
-		lightningCfg:   lightningCfg,
-		debug:          debug,
-		version:        Version,
-		allowPublic:    allowPublic,
-		maxRequestSize: maxRequestSize,
-		maxTopicLength: maxTopicLength,
-		maxMessageSize: maxMessageSize,
+		port:               port,
+		timeout:            timeout,
+		logger:             logger,
+		accessLogger:       accessLogger,
+		errorLogger:        errorLogger,
+		brokerManager:      NewBrokerManager(logger, dataDir, allowPublic, fail2banJail, fail2banLevel),
+		userAuth:           userAuth,
+		security:           NewSecurityChecker(allowedPeers),
+		rateLimiter:        NewRateLimiter(defaultRateLimit, dataDir),
+		ipStats:            NewIPStats(logger, nil),
+		lightning:          lightningRuntime,
+		lightningDB:        lightningDB,
+		lightningCfg:       lightningCfg,
+		systemEventsCfg:    systemEventsCfg,
+		systemEventsBroker: nil, // Initialized in Start() after brokers are ready
+		debug:              debug,
+		version:            Version,
+		allowPublic:        allowPublic,
+		maxRequestSize:     maxRequestSize,
+		maxTopicLength:     maxTopicLength,
+		maxMessageSize:     maxMessageSize,
 	}, nil
 }
 
@@ -543,11 +582,54 @@ func (s *Server) StartMQTT(port int) error {
 	return nil
 }
 
+// initSystemEventsBroker initializes the system events broker if configured
+func (s *Server) initSystemEventsBroker() error {
+	if s.systemEventsCfg == nil || !s.systemEventsCfg.Enabled {
+		s.logger.Println("System events broker disabled")
+		return nil
+	}
+
+	if s.systemEventsCfg.Username == "" || s.systemEventsCfg.Password == "" {
+		return fmt.Errorf("system_events enabled but username/password not configured")
+	}
+
+	// Ensure the user exists (create if not)
+	if !s.userAuth.ValidateUser(s.systemEventsCfg.Username, s.systemEventsCfg.Password) {
+		// User doesn't exist or password is wrong - create/update
+		if err := s.userAuth.AddUser(s.systemEventsCfg.Username, s.systemEventsCfg.Password); err != nil {
+			return fmt.Errorf("failed to create system events user: %w", err)
+		}
+		s.logger.Printf("Created system events user: %s", s.systemEventsCfg.Username)
+	}
+
+	// Get or create the broker for this user
+	broker, err := s.brokerManager.GetOrCreateBroker(s.systemEventsCfg.Username)
+	if err != nil {
+		return fmt.Errorf("failed to get system events broker: %w", err)
+	}
+
+	s.systemEventsBroker = broker
+
+	// Set the system broker on IPStats so it can publish events
+	s.ipStats.SetSystemBroker(broker)
+
+	// Set the system broker on BrokerManager so it can publish broker creation events
+	s.brokerManager.SetSystemEventsBroker(broker)
+
+	s.logger.Printf("System events broker initialized for user: %s", s.systemEventsCfg.Username)
+	return nil
+}
+
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	// Initialize broker manager with context and create default broker if needed
 	if err := s.brokerManager.InitializeDefault(ctx, s.allowPublic); err != nil {
 		return fmt.Errorf("failed to initialize broker manager: %w", err)
+	}
+
+	// Initialize system events broker if configured
+	if err := s.initSystemEventsBroker(); err != nil {
+		return fmt.Errorf("failed to initialize system events broker: %w", err)
 	}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
