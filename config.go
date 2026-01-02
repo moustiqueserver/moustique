@@ -10,10 +10,19 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Logging  LoggingConfig  `yaml:"logging"`
-	Security SecurityConfig `yaml:"security"`
+	Server       ServerConfig       `yaml:"server"`
+	Database     DatabaseConfig     `yaml:"database"`
+	Logging      LoggingConfig      `yaml:"logging"`
+	Security     SecurityConfig     `yaml:"security"`
+	Lightning    LightningConfig    `yaml:"lightning"`
+	SystemEvents SystemEventsConfig `yaml:"system_events"`
+}
+
+// SystemEventsConfig represents configuration for system event publishing
+type SystemEventsConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 // ServerConfig represents server configuration
@@ -45,6 +54,23 @@ type SecurityConfig struct {
 	DefaultRateLimit   int      `yaml:"default_rate_limit"`   // requests per minute, 0 = unlimited
 	Fail2banJail       string   `yaml:"fail2ban_jail"`        // fail2ban jail name, empty = disabled
 	Fail2banLevel      string   `yaml:"fail2ban_level"`       // strict, normal, relaxed, minimal
+}
+
+// LightningConfig represents Lightning Network configuration from YAML
+type LightningConfig struct {
+	Enabled          bool             `yaml:"enabled"`
+	Provider         string           `yaml:"provider"`           // "opennode" or "lnbits"
+	APIKeyEnv        string           `yaml:"api_key_env"`        // environment variable name
+	WebhookSecretEnv string           `yaml:"webhook_secret_env"` // environment variable name
+	WebhookURL       string           `yaml:"webhook_url"`        // Public webhook URL
+	LNBitsURL        string           `yaml:"lnbits_url"`         // LNBits server URL (for provider=lnbits)
+	Pricing          map[string]PricingTier `yaml:"pricing"`
+}
+
+// PricingTier represents a pricing tier
+type PricingTier struct {
+	Credits int64 `yaml:"credits"`
+	Sats    int64 `yaml:"sats"`
 }
 
 // LoadConfig loads configuration from a YAML file
@@ -131,6 +157,11 @@ func GenerateDefaultConfig(path string) error {
 			DefaultRateLimit:   1000,            // 1000 requests per minute
 			Fail2banJail:       "moustique",
 			Fail2banLevel:      "normal", // strict, normal, relaxed, minimal
+		},
+		SystemEvents: SystemEventsConfig{
+			Enabled:  false,
+			Username: "",
+			Password: "",
 		},
 	}
 

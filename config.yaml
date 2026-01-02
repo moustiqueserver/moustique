@@ -15,3 +15,20 @@ security:
   max_topic_length: 256
   max_message_size: 1048576  # 1MB in bytes
   default_rate_limit: 1000   # requests per minute, 0 = unlimited
+lightning:
+  enabled: true  # Set to true to enable Lightning payments
+  provider: lnbits  # "opennode" or "lnbits"
+  api_key_env: LNBITS_API_KEY
+  webhook_secret_env: LNBITS_WEBHOOK_SECRET
+  webhook_url: https://cloud.moustique.xyz/webhook/lnbits
+  lnbits_url: http://192.168.1.158:5000  # LNBits server URL
+  pricing:
+    pack_1k:
+      credits: 1000
+      sats: 100
+    pack_10k:
+      credits: 10000
+      sats: 900
+    pack_100k:
+      credits: 100000
+      sats: 8000

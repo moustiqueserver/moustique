@@ -99,6 +99,8 @@ type Broker struct {
 	minuteGetvalCountTimestamp  int64
 	messagesProcessed           int64
 	mqttClients                 map[string]chan *Message // MQTT client ID -> message channel
+	systemEventsBroker          *Broker                  // Broker for publishing system-wide events
+	brokerUsername              string                   // Username/owner of this broker
 }
 
 // NewBroker creates a new message broker
@@ -148,6 +150,26 @@ func (b *Broker) GetUserLogPath() string {
 	return b.userLogPath
 }
 
+// SetSystemEventsBroker sets the broker used for publishing system-wide events
+func (b *Broker) SetSystemEventsBroker(broker *Broker, username string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.systemEventsBroker = broker
+	b.brokerUsername = username
+}
+
+// publishSystemEvent publishes an event to the system events broker if configured
+// Uses PublishEvent for subscription-based routing (not broadcast)
+func (b *Broker) publishSystemEvent(topic string, data map[string]interface{}) {
+	// Skip if no system events broker configured, or if we ARE the system events broker
+	// (to avoid deadlock from recursive lock)
+	if b.systemEventsBroker == nil || b.systemEventsBroker == b {
+		return
+	}
+	message := formatJSON(data)
+	b.systemEventsBroker.PublishEvent(topic, message)
+}
+
 // Subscribe adds a client subscription to a topic
 func (b *Broker) Subscribe(topic, clientName, ip string) error {
 	return b.SubscribeWithType(topic, clientName, ip, "http", "")
@@ -181,6 +203,16 @@ func (b *Broker) SubscribeWithType(topic, clientName, ip, clientType, mqttClient
 			b.logger.Printf("New %s client: %s from IP: %s", clientType, clientName, ip)
 		}
 		b.LogUser("New %s client: %s from IP: %s", clientType, clientName, ip)
+
+		// Publish system event for new client
+		b.publishSystemEvent("/system/event/client/new", map[string]interface{}{
+			"broker":     b.brokerUsername,
+			"client_id":  clientName,
+			"ip":         ip,
+			"type":       clientType,
+			"first_seen": formatNiceDateTime(now),
+			"timestamp":  now,
+		})
 	} else {
 		// Update existing client
 		existingClient := b.clients[clientName]
@@ -255,6 +287,15 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 			MessageCount:          0,
 		}
 		b.providers[from] = provider
+
+		// Publish system event for new provider
+		b.publishSystemEvent("/system/event/provider/new", map[string]interface{}{
+			"broker":     b.brokerUsername,
+			"provider":   from,
+			"ip":         ip,
+			"first_seen": formatNiceDateTime(updatedTime),
+			"timestamp":  updatedTime,
+		})
 	}
 
 	provider.LatestPostsByTopic[topic] = msg
@@ -312,7 +353,8 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 	return nil
 }
 
-// PublishSystemMessage publishes a system message that will be delivered to all clients
+// PublishSystemMessage publishes a system message that will be delivered to all clients (broadcast)
+// Use this for /server/action/* messages like resubscribe
 func (b *Broker) PublishSystemMessage(topic, message string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -334,6 +376,46 @@ func (b *Broker) PublishSystemMessage(topic, message string) {
 		b.logger.Printf("Published system message to topic: %s", topic)
 	}
 	b.LogUser("Published system message to topic: %s", topic)
+}
+
+// PublishEvent publishes an event to subscribers (subscription-based routing)
+// Use this for /system/event/* messages - only delivered to clients who subscribed
+// This method is safe to call from another broker (no deadlock with self)
+func (b *Broker) PublishEvent(topic, message string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	now := time.Now().Unix()
+	msg := &Message{
+		From:                "SYSTEM",
+		Topic:               topic,
+		Message:             message,
+		UpdatedTime:         now,
+		UpdatedNiceDatetime: formatNiceDateTime(now),
+		Subscribers:         make(map[string]bool),
+		IP:                  "127.0.0.1",
+	}
+
+	// Find matching subscribers using topic explosion (supports wildcards like +, #)
+	topics := b.explodeTopic(topic)
+	topics = append(topics, "#")
+
+	for _, wildcardTopic := range topics {
+		if clients, ok := b.subscriptions[wildcardTopic]; ok {
+			for _, clientName := range clients {
+				if b.messageQueue[clientName] == nil {
+					b.messageQueue[clientName] = make(map[string][]*Message)
+				}
+				b.messageQueue[clientName][wildcardTopic] = append(
+					b.messageQueue[clientName][wildcardTopic], msg)
+				msg.Subscribers[clientName] = true
+			}
+		}
+	}
+
+	if b.debug && len(msg.Subscribers) > 0 {
+		b.logger.Printf("Published event to topic %s (%d subscribers)", topic, len(msg.Subscribers))
+	}
 }
 
 // Pickup retrieves messages for a client
@@ -658,39 +740,74 @@ func (b *Broker) StartMaintenance(ctx context.Context) {
 	}
 }
 
+// kickedClientInfo holds info about a kicked client for deferred event publishing
+type kickedClientInfo struct {
+	name     string
+	ip       string
+	lastSeen string
+}
+
 func (b *Broker) kickInactiveClients() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	now := time.Now().Unix()
-	toKick := []string{} // Samla först, kicka sedan
+	var kickedClients []kickedClientInfo
 
+	// Phase 1: Collect and remove clients while holding lock
+	b.mu.Lock()
 	for clientName, client := range b.clients {
 		if now-client.LatestPickup > int64(b.messageQueueTimeout.Seconds()) {
-			toKick = append(toKick, clientName)
-		}
-	}
+			// Collect info for later event publishing
+			kickedClients = append(kickedClients, kickedClientInfo{
+				name:     clientName,
+				ip:       client.IP,
+				lastSeen: client.LatestPickupNiceDatetime,
+			})
 
-	// Kicka alla inaktiva klienter
-	for _, clientName := range toKick {
-		if b.debug {
-			b.logger.Printf("Kicking %s due to inactivity, last seen: %s", clientName, b.clients[clientName].LatestPickupNiceDatetime)
-		}
+			// Log immediately (doesn't need lock release)
+			b.logger.Printf("⏏️  KICKED CLIENT: %s (inactive since %s, IP: %s)",
+				clientName, client.LatestPickupNiceDatetime, client.IP)
+			b.LogUser("Kicked client %s due to inactivity (last seen: %s)",
+				clientName, client.LatestPickupNiceDatetime)
 
-		// Ta bort från subscriptions
-		for topic := range b.subscriptions {
-			b.subscriptions[topic] = removeString(b.subscriptions[topic], clientName)
-			if len(b.subscriptions[topic]) == 0 {
-				delete(b.subscriptions, topic)
+			// Remove from subscriptions
+			for topic := range b.subscriptions {
+				b.subscriptions[topic] = removeString(b.subscriptions[topic], clientName)
+				if len(b.subscriptions[topic]) == 0 {
+					delete(b.subscriptions, topic)
+				}
 			}
-		}
 
-		delete(b.messageQueue, clientName)
-		delete(b.clients, clientName)
+			delete(b.messageQueue, clientName)
+			delete(b.clients, clientName)
+		}
+	}
+	brokerUsername := b.brokerUsername
+	b.mu.Unlock()
+
+	// Phase 2: Publish events without holding lock (avoids deadlock)
+	for _, kicked := range kickedClients {
+		// Publish to this broker (for user's own monitoring)
+		b.PublishSystemMessage("/system/event/client/kicked", formatJSON(map[string]interface{}{
+			"client_id": kicked.name,
+			"ip":        kicked.ip,
+			"last_seen": kicked.lastSeen,
+			"reason":    "inactivity",
+		}))
+
+		// Publish to system events broker (for admin monitoring, subscription-based)
+		if b.systemEventsBroker != nil && b.systemEventsBroker != b {
+			b.systemEventsBroker.PublishEvent("/system/event/client/kicked", formatJSON(map[string]interface{}{
+				"broker":    brokerUsername,
+				"client_id": kicked.name,
+				"ip":        kicked.ip,
+				"last_seen": kicked.lastSeen,
+				"reason":    "inactivity",
+				"timestamp": now,
+			}))
+		}
 	}
 
-	if b.debug && len(toKick) > 0 {
-		b.logger.Printf("Kicked %d inactive clients", len(toKick))
+	if len(kickedClients) > 0 {
+		b.logger.Printf("Maintenance: Kicked %d inactive client(s)", len(kickedClients))
 	}
 }
 
@@ -773,21 +890,34 @@ func (b *Broker) shouldBanForReason(reason string) bool {
 	}
 }
 
+// crookEventInfo holds info about crook events for deferred publishing
+type crookEventInfo struct {
+	isNew      bool
+	isBanned   bool
+	ip         string
+	reason     string
+	firstSeen  string
+	bannedAt   string
+	attempts   int
+	timestamp  int64
+}
+
 // RecordInvalidRequest records an invalid request from an IP and bans if needed
 // reason can be: invalid_endpoint, invalid_credentials, validation_error, oversized_request, rate_limit_exceeded
 func (b *Broker) RecordInvalidRequest(ip string, reason string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	if ip == "" || ip == "UNKNOWN" {
 		return
 	}
 
 	now := time.Now().Unix()
+	var eventInfo crookEventInfo
+	var brokerUsername string
 
+	// Phase 1: Update state while holding lock
+	b.mu.Lock()
 	crook, exists := b.crooks[ip]
 	if !exists {
-		// First offense - create entry and publish system notification
+		// First offense - create entry
 		crook = &CrookInfo{
 			IP:                    ip,
 			Attempts:              1,
@@ -799,13 +929,11 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 		}
 		b.crooks[ip] = crook
 
-		// Publish system notification about unauthorized connection
-		b.mu.Unlock()
-		b.PublishSystemMessage(
-			"/server/notification/unauthorized_connection",
-			fmt.Sprintf("Unauthorized connection attempt from %s (reason: %s)", ip, reason),
-		)
-		b.mu.Lock()
+		eventInfo.isNew = true
+		eventInfo.ip = ip
+		eventInfo.reason = reason
+		eventInfo.firstSeen = formatNiceDateTime(now)
+		eventInfo.timestamp = now
 
 		if b.debug {
 			b.logger.Printf("Recording invalid request from new IP: %s (reason: %s)", ip, reason)
@@ -817,7 +945,7 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 		crook.LastSeenNiceDatetime = formatNiceDateTime(now)
 	}
 
-	// Check if we should ban based on fail2ban level and reason
+	// Check if we should ban
 	if !crook.IsBanned && b.shouldBanForReason(reason) {
 		crook.IsBanned = true
 		crook.BannedAt = now
@@ -826,6 +954,13 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 		b.logger.Printf("Banning IP %s after %d invalid attempts (reason: %s, level: %s)", ip, crook.Attempts, reason, b.fail2banLevel)
 		b.LogUser("Banned IP: %s (attempts: %d, reason: %s)", ip, crook.Attempts, reason)
 
+		eventInfo.isBanned = true
+		eventInfo.ip = ip
+		eventInfo.reason = reason
+		eventInfo.attempts = crook.Attempts
+		eventInfo.bannedAt = formatNiceDateTime(now)
+		eventInfo.timestamp = now
+
 		// Execute fail2ban command in background
 		go func(jail string) {
 			cmd := exec.Command("sudo", "fail2ban-client", "set", jail, "banip", ip)
@@ -833,6 +968,43 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 				b.logger.Printf("Warning: Failed to ban IP %s via fail2ban jail %s: %v", ip, jail, err)
 			}
 		}(b.fail2banJail)
+	}
+
+	brokerUsername = b.brokerUsername
+	systemEventsBroker := b.systemEventsBroker
+	b.mu.Unlock()
+
+	// Phase 2: Publish events without holding lock
+	if eventInfo.isNew {
+		// Publish to this broker
+		b.PublishSystemMessage(
+			"/server/notification/unauthorized_connection",
+			fmt.Sprintf("Unauthorized connection attempt from %s (reason: %s)", ip, reason),
+		)
+
+		// Publish to system events broker (subscription-based)
+		if systemEventsBroker != nil && systemEventsBroker != b {
+			systemEventsBroker.PublishEvent("/system/event/crook/new", formatJSON(map[string]interface{}{
+				"broker":     brokerUsername,
+				"ip":         eventInfo.ip,
+				"reason":     eventInfo.reason,
+				"first_seen": eventInfo.firstSeen,
+				"timestamp":  eventInfo.timestamp,
+			}))
+		}
+	}
+
+	if eventInfo.isBanned {
+		if systemEventsBroker != nil && systemEventsBroker != b {
+			systemEventsBroker.PublishEvent("/system/event/ip/banned", formatJSON(map[string]interface{}{
+				"broker":    brokerUsername,
+				"ip":        eventInfo.ip,
+				"reason":    eventInfo.reason,
+				"attempts":  eventInfo.attempts,
+				"banned_at": eventInfo.bannedAt,
+				"timestamp": eventInfo.timestamp,
+			}))
+		}
 	}
 }
 

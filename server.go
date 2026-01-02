@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -23,14 +24,15 @@ import (
 
 // BrokerManager manages per-user broker instances
 type BrokerManager struct {
-	brokers       map[string]*Broker
-	mu            sync.RWMutex
-	logger        *log.Logger
-	dataDir       string
-	defaultBroker *Broker
-	ctx           context.Context
-	fail2banJail  string
-	fail2banLevel string
+	brokers            map[string]*Broker
+	mu                 sync.RWMutex
+	logger             *log.Logger
+	dataDir            string
+	defaultBroker      *Broker
+	systemEventsBroker *Broker
+	ctx                context.Context
+	fail2banJail       string
+	fail2banLevel      string
 }
 
 // NewBrokerManager creates a new broker manager
@@ -138,6 +140,12 @@ func (bm *BrokerManager) GetOrCreateBroker(username string) (*Broker, error) {
 	// Create broker
 	broker := NewBroker(bm.logger, db, false, bm.fail2banJail, bm.fail2banLevel)
 	broker.SetUserLogger(userLogger, userLogPath)
+
+	// Set system events broker so this broker can publish system-wide events
+	if bm.systemEventsBroker != nil {
+		broker.SetSystemEventsBroker(bm.systemEventsBroker, username)
+	}
+
 	bm.brokers[username] = broker
 
 	// Publish resubscribe system message for clients to re-register
@@ -146,8 +154,19 @@ func (bm *BrokerManager) GetOrCreateBroker(username string) (*Broker, error) {
 	// Start maintenance for this user's broker
 	go broker.StartMaintenance(bm.ctx)
 
-	bm.logger.Printf("Created broker instance for user: %s", username)
+	bm.logger.Printf("🆕 NEW BROKER: Created broker instance for user: %s", username)
 	broker.LogUser("Broker initialized")
+
+	// Publish system event to system events broker (subscription-based)
+	if bm.systemEventsBroker != nil {
+		message := formatJSON(map[string]interface{}{
+			"username":  username,
+			"timestamp": time.Now().Unix(),
+			"created":   formatNiceDateTime(time.Now().Unix()),
+		})
+		bm.systemEventsBroker.PublishEvent("/system/event/broker/created", message)
+	}
+
 	return broker, nil
 }
 
@@ -161,6 +180,23 @@ func (bm *BrokerManager) GetBroker(username string) *Broker {
 // GetDefaultBroker returns the public/default broker
 func (bm *BrokerManager) GetDefaultBroker() *Broker {
 	return bm.defaultBroker
+}
+
+// SetSystemEventsBroker sets the broker used for publishing system events
+func (bm *BrokerManager) SetSystemEventsBroker(broker *Broker) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	bm.systemEventsBroker = broker
+
+	// Update all existing brokers to use this system events broker
+	for username, b := range bm.brokers {
+		b.SetSystemEventsBroker(broker, username)
+	}
+
+	// Also update the default broker if it exists
+	if bm.defaultBroker != nil {
+		bm.defaultBroker.SetSystemEventsBroker(broker, "public")
+	}
 }
 
 // GetAllUsers returns list of all active users
@@ -201,7 +237,7 @@ func (bm *BrokerManager) SaveAll() error {
 
 // UserAuth handles user authentication with persistence
 type UserAuth struct {
-	users    map[string]string // username -> password hash
+	users    map[string]*UserData // username -> user data
 	mu       sync.RWMutex
 	filePath string
 }
@@ -210,6 +246,7 @@ type UserAuth struct {
 type UserData struct {
 	Username     string `json:"username"`
 	PasswordHash string `json:"password_hash"`
+	Credits      int64  `json:"credits"` // -1 = unlimited, 0 = none, >0 = count
 }
 
 // NewUserAuth creates a new user authentication handler
@@ -223,7 +260,7 @@ func NewUserAuth(dataDir string) (*UserAuth, error) {
 	filePath := filepath.Join(usersDir, "users.json")
 
 	ua := &UserAuth{
-		users:    make(map[string]string),
+		users:    make(map[string]*UserData),
 		filePath: filePath,
 	}
 
@@ -253,9 +290,9 @@ func (ua *UserAuth) Load() error {
 		return fmt.Errorf("failed to parse users file: %w", err)
 	}
 
-	ua.users = make(map[string]string)
-	for _, user := range userData {
-		ua.users[user.Username] = user.PasswordHash
+	ua.users = make(map[string]*UserData)
+	for i := range userData {
+		ua.users[userData[i].Username] = &userData[i]
 	}
 
 	return nil
@@ -267,11 +304,8 @@ func (ua *UserAuth) Save() error {
 	defer ua.mu.RUnlock()
 
 	userData := make([]UserData, 0, len(ua.users))
-	for username, hash := range ua.users {
-		userData = append(userData, UserData{
-			Username:     username,
-			PasswordHash: hash,
-		})
+	for _, user := range ua.users {
+		userData = append(userData, *user)
 	}
 
 	data, err := json.MarshalIndent(userData, "", "  ")
@@ -289,7 +323,17 @@ func (ua *UserAuth) Save() error {
 // AddUser adds or updates a user
 func (ua *UserAuth) AddUser(username, password string) error {
 	ua.mu.Lock()
-	ua.users[username] = hashPassword(password)
+	if existing, ok := ua.users[username]; ok {
+		// Update password but keep credits
+		existing.PasswordHash = hashPassword(password)
+	} else {
+		// New user with 0 credits
+		ua.users[username] = &UserData{
+			Username:     username,
+			PasswordHash: hashPassword(password),
+			Credits:      0,
+		}
+	}
 	ua.mu.Unlock()
 
 	return ua.Save()
@@ -300,11 +344,82 @@ func (ua *UserAuth) ValidateUser(username, password string) bool {
 	ua.mu.RLock()
 	defer ua.mu.RUnlock()
 
-	hash, exists := ua.users[username]
+	user, exists := ua.users[username]
 	if !exists {
 		return false
 	}
-	return hash == hashPassword(password)
+	return user.PasswordHash == hashPassword(password)
+}
+
+// GetUserCredits returns the credits for a user (-1 = unlimited, 0 = none, >0 = count)
+func (ua *UserAuth) GetUserCredits(username string) int64 {
+	ua.mu.RLock()
+	defer ua.mu.RUnlock()
+
+	user, exists := ua.users[username]
+	if !exists {
+		return 0
+	}
+	return user.Credits
+}
+
+// DeductCredit atomically deducts 1 credit from user. Returns true if successful.
+func (ua *UserAuth) DeductCredit(username string) bool {
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
+
+	user, exists := ua.users[username]
+	if !exists {
+		return false
+	}
+
+	// Unlimited credits
+	if user.Credits == -1 {
+		return true
+	}
+
+	// No credits left
+	if user.Credits <= 0 {
+		return false
+	}
+
+	// Deduct credit
+	user.Credits--
+	ua.Save() // Save after deduction
+	return true
+}
+
+// AddCredits adds credits to a user
+func (ua *UserAuth) AddCredits(username string, amount int64) error {
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
+
+	user, exists := ua.users[username]
+	if !exists {
+		return fmt.Errorf("user not found: %s", username)
+	}
+
+	// Don't modify if already unlimited
+	if user.Credits == -1 {
+		return nil
+	}
+
+	user.Credits += amount
+	return ua.Save()
+}
+
+// SetCredits sets the exact credit amount for a user (-1 = unlimited)
+func (ua *UserAuth) SetCredits(username string, amount int64) error {
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
+
+	user, exists := ua.users[username]
+	if !exists {
+		return fmt.Errorf("user not found: %s", username)
+	}
+
+	user.Credits = amount
+	return ua.Save()
 }
 
 // hashPassword creates a SHA256 hash of the password
@@ -315,25 +430,31 @@ func hashPassword(password string) string {
 
 // Server handles HTTP connections
 type Server struct {
-	port           int
-	timeout        time.Duration
-	logger         *log.Logger
-	accessLogger   *RotatingLogger
-	errorLogger    *RotatingLogger
-	brokerManager  *BrokerManager
-	userAuth       *UserAuth
-	security       *SecurityChecker
-	rateLimiter    *RateLimiter
-	debug          bool
-	version        string
-	allowPublic    bool
-	maxRequestSize int64
-	maxTopicLength int
-	maxMessageSize int64
+	port               int
+	timeout            time.Duration
+	logger             *log.Logger
+	accessLogger       *RotatingLogger
+	errorLogger        *RotatingLogger
+	brokerManager      *BrokerManager
+	userAuth           *UserAuth
+	security           *SecurityChecker
+	rateLimiter        *RateLimiter
+	ipStats            *IPStats
+	lightning          *LightningRuntime
+	lightningDB        *LightningDB
+	lightningCfg       *LightningConfig
+	systemEventsCfg    *SystemEventsConfig
+	systemEventsBroker *Broker
+	debug              bool
+	version            string
+	allowPublic        bool
+	maxRequestSize     int64
+	maxTopicLength     int
+	maxMessageSize     int64
 }
 
 // NewServer creates a new HTTP server
-func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, allowedPeers []string, maxRequestSize int64, maxTopicLength int, maxMessageSize int64, defaultRateLimit int, fail2banJail string, fail2banLevel string, logDir string) (*Server, error) {
+func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir string, debug bool, Version string, allowPublic bool, allowedPeers []string, maxRequestSize int64, maxTopicLength int, maxMessageSize int64, defaultRateLimit int, fail2banJail string, fail2banLevel string, logDir string, lightningCfg *LightningConfig, systemEventsCfg *SystemEventsConfig) (*Server, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
@@ -358,22 +479,81 @@ func NewServer(port int, timeout time.Duration, logger *log.Logger, dataDir stri
 		errorLogger = nil // Continue without error logging
 	}
 
+	// Initialize Lightning if enabled
+	var lightningRuntime *LightningRuntime
+	var lightningDB *LightningDB
+
+	if lightningCfg != nil && lightningCfg.Enabled {
+		// Create Lightning database
+		ldb, err := NewLightningDB(dataDir)
+		if err != nil {
+			logger.Printf("Warning: Failed to initialize Lightning DB: %v", err)
+		} else {
+			lightningDB = ldb
+
+			// Get API credentials from environment
+			apiKey := ""
+			webhookSecret := ""
+			if lightningCfg.APIKeyEnv != "" {
+				apiKey = os.Getenv(lightningCfg.APIKeyEnv)
+			}
+			if lightningCfg.WebhookSecretEnv != "" {
+				webhookSecret = os.Getenv(lightningCfg.WebhookSecretEnv)
+			}
+
+			if apiKey == "" {
+				logger.Println("Lightning enabled but API key not found in environment - Lightning features disabled")
+			} else {
+				lightningRuntime = &LightningRuntime{
+					Enabled:       true,
+					Provider:      lightningCfg.Provider,
+					APIKey:        apiKey,
+					WebhookSecret: webhookSecret,
+					LNBitsURL:     lightningCfg.LNBitsURL,
+				}
+
+				// Initialize the appropriate client based on provider
+				if lightningCfg.Provider == "lnbits" {
+					if lightningCfg.LNBitsURL == "" {
+						logger.Println("Lightning provider is 'lnbits' but lnbits_url not configured - Lightning features disabled")
+						lightningRuntime = nil
+					} else {
+						lightningRuntime.LNBitsClient = NewLNBitsClient(apiKey, lightningCfg.LNBitsURL)
+						logger.Printf("Lightning Network payments enabled via LNBits at %s", lightningCfg.LNBitsURL)
+					}
+				} else if lightningCfg.Provider == "opennode" {
+					lightningRuntime.OpenNodeClient = NewOpenNodeClient(apiKey)
+					logger.Println("Lightning Network payments enabled via OpenNode")
+				} else {
+					logger.Printf("Unknown Lightning provider '%s' - Lightning features disabled", lightningCfg.Provider)
+					lightningRuntime = nil
+				}
+			}
+		}
+	}
+
 	return &Server{
-		port:           port,
-		timeout:        timeout,
-		logger:         logger,
-		accessLogger:   accessLogger,
-		errorLogger:    errorLogger,
-		brokerManager:  NewBrokerManager(logger, dataDir, allowPublic, fail2banJail, fail2banLevel),
-		userAuth:       userAuth,
-		security:       NewSecurityChecker(allowedPeers),
-		rateLimiter:    NewRateLimiter(defaultRateLimit, dataDir),
-		debug:          debug,
-		version:        Version,
-		allowPublic:    allowPublic,
-		maxRequestSize: maxRequestSize,
-		maxTopicLength: maxTopicLength,
-		maxMessageSize: maxMessageSize,
+		port:               port,
+		timeout:            timeout,
+		logger:             logger,
+		accessLogger:       accessLogger,
+		errorLogger:        errorLogger,
+		brokerManager:      NewBrokerManager(logger, dataDir, allowPublic, fail2banJail, fail2banLevel),
+		userAuth:           userAuth,
+		security:           NewSecurityChecker(allowedPeers),
+		rateLimiter:        NewRateLimiter(defaultRateLimit, dataDir),
+		ipStats:            NewIPStats(logger, nil),
+		lightning:          lightningRuntime,
+		lightningDB:        lightningDB,
+		lightningCfg:       lightningCfg,
+		systemEventsCfg:    systemEventsCfg,
+		systemEventsBroker: nil, // Initialized in Start() after brokers are ready
+		debug:              debug,
+		version:            Version,
+		allowPublic:        allowPublic,
+		maxRequestSize:     maxRequestSize,
+		maxTopicLength:     maxTopicLength,
+		maxMessageSize:     maxMessageSize,
 	}, nil
 }
 
@@ -402,11 +582,54 @@ func (s *Server) StartMQTT(port int) error {
 	return nil
 }
 
+// initSystemEventsBroker initializes the system events broker if configured
+func (s *Server) initSystemEventsBroker() error {
+	if s.systemEventsCfg == nil || !s.systemEventsCfg.Enabled {
+		s.logger.Println("System events broker disabled")
+		return nil
+	}
+
+	if s.systemEventsCfg.Username == "" || s.systemEventsCfg.Password == "" {
+		return fmt.Errorf("system_events enabled but username/password not configured")
+	}
+
+	// Ensure the user exists (create if not)
+	if !s.userAuth.ValidateUser(s.systemEventsCfg.Username, s.systemEventsCfg.Password) {
+		// User doesn't exist or password is wrong - create/update
+		if err := s.userAuth.AddUser(s.systemEventsCfg.Username, s.systemEventsCfg.Password); err != nil {
+			return fmt.Errorf("failed to create system events user: %w", err)
+		}
+		s.logger.Printf("Created system events user: %s", s.systemEventsCfg.Username)
+	}
+
+	// Get or create the broker for this user
+	broker, err := s.brokerManager.GetOrCreateBroker(s.systemEventsCfg.Username)
+	if err != nil {
+		return fmt.Errorf("failed to get system events broker: %w", err)
+	}
+
+	s.systemEventsBroker = broker
+
+	// Set the system broker on IPStats so it can publish events
+	s.ipStats.SetSystemBroker(broker)
+
+	// Set the system broker on BrokerManager so it can publish broker creation events
+	s.brokerManager.SetSystemEventsBroker(broker)
+
+	s.logger.Printf("System events broker initialized for user: %s", s.systemEventsCfg.Username)
+	return nil
+}
+
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	// Initialize broker manager with context and create default broker if needed
 	if err := s.brokerManager.InitializeDefault(ctx, s.allowPublic); err != nil {
 		return fmt.Errorf("failed to initialize broker manager: %w", err)
+	}
+
+	// Initialize system events broker if configured
+	if err := s.initSystemEventsBroker(); err != nil {
+		return fmt.Errorf("failed to initialize system events broker: %w", err)
 	}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
@@ -546,11 +769,26 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	statusCode := 200 // default to 200 OK
 	var username string
 
+	// Handle CORS preflight requests
+	if req.Method == "OPTIONS" {
+		s.sendCORSPreflight(conn)
+		return
+	}
+
+	// Record IP statistics
+	s.ipStats.RecordRequest(peerHost)
+
 	// Defer access logging
 	defer func() {
+		duration := float64(time.Since(start).Nanoseconds()) / 1e6 // milliseconds
+
+		// Log to access logger if available
 		if s.accessLogger != nil {
-			duration := float64(time.Since(start).Nanoseconds()) / 1e6 // milliseconds
 			s.accessLogger.LogAccess(peerHost, req.Method, req.URL.Path, username, statusCode, duration)
+		} else {
+			// Fallback to main logger if access logger is not available
+			s.logger.Printf("ACCESS %s %s %s user=%s status=%d duration=%.2fms",
+				peerHost, req.Method, req.URL.Path, username, statusCode, duration)
 		}
 	}()
 
@@ -631,6 +869,83 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	case "moustique_logo.png":
 		s.ServeLogo(conn)
 		return
+	case "robots.txt":
+		s.ServeRobotsTxt(conn)
+		return
+	case "moustique.js":
+		s.ServeMoustiqueJS(conn)
+		return
+	}
+
+	// Webhook endpoint for Lightning payment notifications (no auth required)
+	if strings.HasPrefix(path, "webhook/") {
+		if path == "webhook/lnbits" && req.Method == "POST" {
+			s.handleLNBitsWebhook(conn, req)
+			return
+		}
+		s.sendNotFound(conn)
+		return
+	}
+
+	// API endpoints (HTTP REST API with Basic Auth)
+	if strings.HasPrefix(path, "api/") {
+		// Extract Basic Auth credentials
+		authHeader := req.Header.Get("Authorization")
+		if authHeader == "" {
+			s.sendUnauthorized(conn, "Authorization header required")
+			return
+		}
+
+		// Parse Basic Auth
+		const prefix = "Basic "
+		if !strings.HasPrefix(authHeader, prefix) {
+			s.sendUnauthorized(conn, "Invalid authorization header")
+			return
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(authHeader[len(prefix):])
+		if err != nil {
+			s.sendUnauthorized(conn, "Invalid authorization header")
+			return
+		}
+
+		credentials := strings.SplitN(string(decoded), ":", 2)
+		if len(credentials) != 2 {
+			s.sendUnauthorized(conn, "Invalid authorization header")
+			return
+		}
+
+		apiUsername := credentials[0]
+		apiPassword := credentials[1]
+
+		// Validate user
+		if !s.userAuth.ValidateUser(apiUsername, apiPassword) {
+			s.sendUnauthorized(conn, "Invalid credentials")
+			return
+		}
+
+		// Parse query parameters for package/charge_id
+		queryParams := make(map[string]string)
+		for key, values := range req.URL.Query() {
+			if len(values) > 0 {
+				queryParams[key] = values[0]
+			}
+		}
+
+		// Route to API handler
+		switch path {
+		case "api/credits":
+			s.handleGetCredits(conn, queryParams, apiUsername)
+		case "api/packages":
+			s.handleGetPackages(conn, queryParams, apiUsername)
+		case "api/buy_credits":
+			s.handleBuyCredits(conn, queryParams, apiUsername)
+		case "api/check_invoice":
+			s.handleCheckInvoice(conn, queryParams, apiUsername)
+		default:
+			s.sendNotFound(conn)
+		}
+		return
 	}
 
 	// Admin endpoints (require admin password, not user auth)
@@ -654,6 +969,10 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 			s.handleAdminGetRateLimit(conn, params)
 		case "ADMIN/SERVER_LOG":
 			s.GetRecentLogs(conn, 100)
+		case "ADMIN/ALL_CLIENTS":
+			s.handleAdminAllClients(conn, params)
+		case "ADMIN/ALL_IPS":
+			s.handleAdminAllIPs(conn, params)
 		default:
 			s.sendNotFound(conn)
 		}
@@ -761,6 +1080,12 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 		s.handleTopics(conn, params, broker)
 	case "CROOKS":
 		s.handleCrooks(conn, params, broker)
+	case "BUY_CREDITS":
+		s.handleBuyCredits(conn, params, username)
+	case "CHECK_INVOICE":
+		s.handleCheckInvoice(conn, params, username)
+	case "CREDITS":
+		s.handleGetCredits(conn, params, username)
 	default:
 		// Whitelist legitimate browser resources that should just get 404, not banned
 		legitimateResources := []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot"}
@@ -1087,6 +1412,340 @@ func (s *Server) handleLog(conn net.Conn, params map[string]string, broker *Brok
 	s.GetUserLogs(conn, broker, 100)
 }
 
+// Lightning Network handlers
+
+func (s *Server) handleBuyCredits(conn net.Conn, params map[string]string, username string) {
+	// Check if Lightning is enabled
+	if s.lightning == nil || !s.lightning.Enabled {
+		s.sendError(conn, fmt.Errorf("lightning payments not enabled"))
+		return
+	}
+
+	// Get requested package
+	packageName := params["package"]
+	if packageName == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	// Get pricing tier
+	tier, exists := s.lightningCfg.Pricing[packageName]
+	if !exists {
+		s.sendError(conn, fmt.Errorf("invalid package: %s", packageName))
+		return
+	}
+
+	// Create invoice based on provider
+	description := fmt.Sprintf("Moustique Credits: %d requests", tier.Credits)
+	orderID := fmt.Sprintf("%s-%d", username, time.Now().Unix())
+
+	var invoice *LightningInvoice
+	var responseData map[string]interface{}
+
+	if s.lightning.Provider == "lnbits" {
+		// Use LNBits
+		expirySeconds := 3600
+		invoiceResp, err := s.lightning.LNBitsClient.CreateInvoice(tier.Sats, description, expirySeconds)
+		if err != nil {
+			s.logger.Printf("Failed to create LNBits invoice: %v", err)
+			s.sendError(conn, fmt.Errorf("failed to create invoice"))
+			return
+		}
+
+		// Calculate expiry time (current time + expiry seconds)
+		// Don't parse from response as it may be in different format
+		now := time.Now()
+		expiresAt := now.Add(time.Duration(expirySeconds) * time.Second).Unix()
+
+		s.logger.Printf("Created LNBits invoice: payment_hash=%s, expires_at=%d (%s)",
+			invoiceResp.PaymentHash, expiresAt, time.Unix(expiresAt, 0).Format(time.RFC3339))
+
+		invoice = &LightningInvoice{
+			ChargeID:   invoiceResp.PaymentHash,
+			Username:   username,
+			AmountSats: tier.Sats,
+			Credits:    tier.Credits,
+			Status:     "pending",
+			Invoice:    invoiceResp.Bolt11,
+			ExpiresAt:  expiresAt,
+			CreatedAt:  now.Unix(),
+			Processed:  false,
+		}
+
+		responseData = map[string]interface{}{
+			"charge_id":   invoiceResp.PaymentHash,
+			"invoice":     invoiceResp.Bolt11,
+			"amount_sats": tier.Sats,
+			"credits":     tier.Credits,
+			"expires_at":  expiresAt,
+		}
+	} else {
+		// Use OpenNode
+		callbackURL := s.lightningCfg.WebhookURL
+		chargeResp, err := s.lightning.OpenNodeClient.CreateCharge(tier.Sats, description, orderID, callbackURL)
+		if err != nil {
+			s.logger.Printf("Failed to create OpenNode charge: %v", err)
+			s.sendError(conn, fmt.Errorf("failed to create invoice"))
+			return
+		}
+
+		invoice = &LightningInvoice{
+			ChargeID:   chargeResp.Data.ID,
+			Username:   username,
+			AmountSats: tier.Sats,
+			Credits:    tier.Credits,
+			Status:     "pending",
+			Invoice:    chargeResp.Data.LightningInvoice.Payreq,
+			ExpiresAt:  chargeResp.Data.LightningInvoice.ExpiresAt,
+			CreatedAt:  time.Now().Unix(),
+			Processed:  false,
+		}
+
+		responseData = map[string]interface{}{
+			"charge_id":   chargeResp.Data.ID,
+			"invoice":     chargeResp.Data.LightningInvoice.Payreq,
+			"amount_sats": tier.Sats,
+			"credits":     tier.Credits,
+			"expires_at":  chargeResp.Data.LightningInvoice.ExpiresAt,
+		}
+	}
+
+	// Store invoice in database
+	if err := s.lightningDB.CreateInvoice(invoice); err != nil {
+		s.logger.Printf("Failed to store invoice: %v", err)
+		s.sendError(conn, fmt.Errorf("failed to create invoice"))
+		return
+	}
+
+	// Publish system event for invoice created (subscription-based)
+	if s.systemEventsBroker != nil {
+		s.systemEventsBroker.PublishEvent("/system/event/invoice/created", formatJSON(map[string]interface{}{
+			"username":    username,
+			"package":     packageName,
+			"credits":     tier.Credits,
+			"amount_sats": tier.Sats,
+			"charge_id":   invoice.ChargeID,
+			"expires_at":  invoice.ExpiresAt,
+			"timestamp":   invoice.CreatedAt,
+		}))
+	}
+
+	// Return invoice to user
+	s.sendPlainJSON(conn, responseData)
+}
+
+func (s *Server) handleCheckInvoice(conn net.Conn, params map[string]string, username string) {
+	// Check if Lightning is enabled
+	if s.lightning == nil || !s.lightning.Enabled {
+		s.sendError(conn, fmt.Errorf("lightning payments not enabled"))
+		return
+	}
+
+	chargeID := params["charge_id"]
+	if chargeID == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	// Get invoice from database
+	invoice, err := s.lightningDB.GetInvoice(chargeID)
+	if err != nil {
+		s.sendError(conn, err)
+		return
+	}
+
+	// Verify it belongs to this user
+	if invoice.Username != username {
+		s.sendUnauthorized(conn, "Not your invoice")
+		return
+	}
+
+	// If invoice is still pending, check if expired or paid
+	if invoice.Status == "pending" {
+		// Check if invoice has expired
+		now := time.Now().Unix()
+		if now > invoice.ExpiresAt {
+			// Invoice expired - update status
+			s.lightningDB.UpdateInvoiceStatus(invoice.ChargeID, "expired", 0)
+			invoice.Status = "expired"
+		} else {
+			// Still valid - check with Lightning provider
+			if s.lightning.Provider == "lnbits" {
+				// Check with LNBits
+				paid, err := s.lightning.LNBitsClient.CheckPayment(invoice.ChargeID)
+				if err != nil {
+					s.logger.Printf("Error checking LNBits payment: %v", err)
+				} else if paid {
+					// Payment confirmed! Process it
+					s.processPayment(invoice)
+				}
+			} else if s.lightning.Provider == "opennode" {
+				// Check with OpenNode
+				chargeInfo, err := s.lightning.OpenNodeClient.GetCharge(invoice.ChargeID)
+				if err != nil {
+					s.logger.Printf("Error checking OpenNode charge: %v", err)
+				} else if chargeInfo.Data.Status == "paid" {
+					// Payment confirmed! Process it
+					s.processPayment(invoice)
+				}
+			}
+		}
+	}
+
+	// Return status (may have been updated above)
+	s.sendPlainJSON(conn, map[string]interface{}{
+		"charge_id":   invoice.ChargeID,
+		"status":      invoice.Status,
+		"amount_sats": invoice.AmountSats,
+		"credits":     invoice.Credits,
+		"paid_at":     invoice.PaidAt,
+	})
+}
+
+// processPayment processes a paid Lightning invoice (updates status, grants credits)
+func (s *Server) processPayment(invoice *LightningInvoice) {
+	// Skip if already processed
+	if invoice.Processed {
+		return
+	}
+
+	paidAt := time.Now().Unix()
+
+	// Update invoice status
+	if err := s.lightningDB.UpdateInvoiceStatus(invoice.ChargeID, "paid", paidAt); err != nil {
+		s.logger.Printf("Error updating invoice status: %v", err)
+		return
+	}
+
+	// Grant credits to user
+	if err := s.userAuth.AddCredits(invoice.Username, invoice.Credits); err != nil {
+		s.logger.Printf("Error granting credits: %v", err)
+		return
+	}
+
+	// Mark invoice as processed
+	if err := s.lightningDB.MarkInvoiceProcessed(invoice.ChargeID); err != nil {
+		s.logger.Printf("Error marking invoice as processed: %v", err)
+		return
+	}
+
+	// Record transaction
+	if err := s.lightningDB.AddTransaction(invoice.Username, invoice.Credits, "purchase", invoice.ChargeID, paidAt); err != nil {
+		s.logger.Printf("Error recording transaction: %v", err)
+	}
+
+	// Update local invoice object so the response shows updated status
+	invoice.Status = "paid"
+	invoice.PaidAt = paidAt
+	invoice.Processed = true
+
+	s.logger.Printf("Payment processed: %s received %d credits (%d sats)", invoice.Username, invoice.Credits, invoice.AmountSats)
+
+	// Publish system event for purchase (subscription-based)
+	if s.systemEventsBroker != nil {
+		message := formatJSON(map[string]interface{}{
+			"username":    invoice.Username,
+			"credits":     invoice.Credits,
+			"amount_sats": invoice.AmountSats,
+			"charge_id":   invoice.ChargeID,
+			"paid_at":     formatNiceDateTime(paidAt),
+			"timestamp":   paidAt,
+		})
+		s.systemEventsBroker.PublishEvent("/system/event/purchase/completed", message)
+	}
+}
+
+// handleLNBitsWebhook handles webhook notifications from LNBits
+func (s *Server) handleLNBitsWebhook(conn net.Conn, req *http.Request) {
+	// Read POST body
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		s.logger.Printf("Error reading webhook body: %v", err)
+		s.sendBadRequest(conn)
+		return
+	}
+
+	// Parse JSON payload
+	var payload struct {
+		PaymentHash string `json:"payment_hash"`
+		Pending     bool   `json:"pending"`
+		Amount      int64  `json:"amount"` // in sats
+		Memo        string `json:"memo"`
+		Time        int64  `json:"time"`
+	}
+
+	if err := json.Unmarshal(body, &payload); err != nil {
+		s.logger.Printf("Error parsing webhook JSON: %v", err)
+		s.sendBadRequest(conn)
+		return
+	}
+
+	s.logger.Printf("LNBits webhook received: payment_hash=%s pending=%v amount=%d", payload.PaymentHash, payload.Pending, payload.Amount)
+
+	// If payment is not pending (i.e., it's paid), process it
+	if !payload.Pending {
+		// Find the invoice
+		invoice, err := s.lightningDB.GetInvoice(payload.PaymentHash)
+		if err != nil {
+			s.logger.Printf("Webhook: invoice not found for payment_hash %s: %v", payload.PaymentHash, err)
+			// Still return 200 OK to acknowledge receipt
+			s.sendOK(conn)
+			return
+		}
+
+		// Process the payment
+		s.processPayment(invoice)
+	}
+
+	// Send 200 OK response
+	s.sendOK(conn)
+}
+
+func (s *Server) handleGetCredits(conn net.Conn, params map[string]string, username string) {
+	credits := s.userAuth.GetUserCredits(username)
+
+	response := map[string]interface{}{
+		"username":  username,
+		"credits":   credits,
+		"unlimited": credits == -1,
+	}
+
+	// Include packages if Lightning is enabled
+	if s.lightning != nil && s.lightning.Enabled && s.lightningCfg != nil {
+		packages := make(map[string]interface{})
+		for name, tier := range s.lightningCfg.Pricing {
+			packages[name] = map[string]interface{}{
+				"credits": tier.Credits,
+				"sats":    tier.Sats,
+			}
+		}
+		response["packages"] = packages
+	}
+
+	s.sendPlainJSON(conn, response)
+}
+
+func (s *Server) handleGetPackages(conn net.Conn, params map[string]string, username string) {
+	// Check if Lightning is enabled
+	if s.lightning == nil || !s.lightning.Enabled {
+		s.sendError(conn, fmt.Errorf("lightning payments not enabled"))
+		return
+	}
+
+	// Return available packages
+	packages := make(map[string]interface{})
+	for name, tier := range s.lightningCfg.Pricing {
+		packages[name] = map[string]interface{}{
+			"credits": tier.Credits,
+			"sats":    tier.Sats,
+		}
+	}
+
+	s.sendPlainJSON(conn, map[string]interface{}{
+		"packages": packages,
+	})
+}
+
 func (s *Server) buildStatusPage(broker *Broker) string {
 	stats := broker.GetStats()
 
@@ -1329,10 +1988,113 @@ func (s *Server) handleAdminGetRateLimit(conn net.Conn, params map[string]string
 	})
 }
 
+func (s *Server) handleAdminAllClients(conn net.Conn, params map[string]string) {
+	type ClientInfo struct {
+		Username  string `json:"username"`
+		ClientID  string `json:"client_id"`
+		IP        string `json:"ip"`
+		Connected string `json:"connected"`
+		Requests  int    `json:"requests"`
+	}
+
+	var allClients []ClientInfo
+
+	s.brokerManager.mu.RLock()
+	for username, broker := range s.brokerManager.brokers {
+		clients := broker.GetClients()
+		for _, client := range clients {
+			allClients = append(allClients, ClientInfo{
+				Username:  username,
+				ClientID:  client.Name,
+				IP:        client.IP,
+				Connected: client.FirstSeenNiceDatetime,
+				Requests:  client.RequestCounter,
+			})
+		}
+	}
+	s.brokerManager.mu.RUnlock()
+
+	s.sendJSON(conn, map[string]interface{}{
+		"clients": allClients,
+		"total":   len(allClients),
+	})
+}
+
+func (s *Server) handleAdminAllIPs(conn net.Conn, params map[string]string) {
+	type IPInfo struct {
+		IP           string   `json:"ip"`
+		Usernames    []string `json:"usernames"`
+		LastSeen     string   `json:"last_seen"`
+		Requests     int64    `json:"requests"`
+		ActiveClient bool     `json:"active_client"`
+	}
+
+	// Get all IPs from global stats
+	allIPStats := s.ipStats.GetAllIPs()
+
+	// Create a map to track which IPs have active clients
+	activeIPs := make(map[string]map[string]bool) // IP -> username -> true
+
+	// Collect active clients from all brokers
+	s.brokerManager.mu.RLock()
+	for username, broker := range s.brokerManager.brokers {
+		clients := broker.GetClients()
+		for _, client := range clients {
+			if client.IP != "" {
+				if activeIPs[client.IP] == nil {
+					activeIPs[client.IP] = make(map[string]bool)
+				}
+				activeIPs[client.IP][username] = true
+			}
+		}
+	}
+	s.brokerManager.mu.RUnlock()
+
+	// Build response
+	var allIPs []IPInfo
+	for _, ipStat := range allIPStats {
+		usernames := []string{}
+		if users, hasActive := activeIPs[ipStat.IP]; hasActive {
+			for username := range users {
+				usernames = append(usernames, username)
+			}
+		}
+
+		allIPs = append(allIPs, IPInfo{
+			IP:           ipStat.IP,
+			Usernames:    usernames,
+			LastSeen:     ipStat.LastSeenString,
+			Requests:     ipStat.RequestCount,
+			ActiveClient: len(usernames) > 0,
+		})
+	}
+
+	s.sendJSON(conn, map[string]interface{}{
+		"ips":   allIPs,
+		"total": len(allIPs),
+	})
+}
+
 // Response helpers
+
+// CORS headers for cross-origin requests (landing page on port 80 calling API on port 33334)
+func (s *Server) writeCORSHeaders(conn net.Conn) {
+	fmt.Fprintf(conn, "Access-Control-Allow-Origin: *\r\n")
+	fmt.Fprintf(conn, "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n")
+	fmt.Fprintf(conn, "Access-Control-Allow-Headers: Content-Type, Authorization\r\n")
+	fmt.Fprintf(conn, "Access-Control-Max-Age: 86400\r\n")
+}
+
+func (s *Server) sendCORSPreflight(conn net.Conn) {
+	fmt.Fprintf(conn, "HTTP/1.1 204 No Content\r\n")
+	s.writeCORSHeaders(conn)
+	fmt.Fprintf(conn, "Content-Length: 0\r\n")
+	fmt.Fprintf(conn, "\r\n")
+}
 
 func (s *Server) sendOK(conn net.Conn) {
 	fmt.Fprintf(conn, "HTTP/1.0 200 OK\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Connection: close\r\n")
 	fmt.Fprintf(conn, "Content-Length: 0\r\n")
 	fmt.Fprintf(conn, "\r\n")
@@ -1348,12 +2110,30 @@ func (s *Server) sendJSON(conn net.Conn, data interface{}) {
 	encoded := encodeROT13Base64(string(jsonData))
 
 	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Connection: close\r\n")
 	fmt.Fprintf(conn, "Keep-Alive: timeout=15, max=500\r\n")
 	fmt.Fprintf(conn, "Content-Type: text/plain; charset=utf-8\r\n")
 	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(encoded))
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "%s", encoded)
+}
+
+// sendPlainJSON sends plain JSON (without ROT13+base64 encoding) for API endpoints
+func (s *Server) sendPlainJSON(conn net.Conn, data interface{}) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		s.sendError(conn, err)
+		return
+	}
+
+	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\n")
+	s.writeCORSHeaders(conn)
+	fmt.Fprintf(conn, "Connection: close\r\n")
+	fmt.Fprintf(conn, "Content-Type: application/json\r\n")
+	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(jsonData))
+	fmt.Fprintf(conn, "\r\n")
+	fmt.Fprintf(conn, "%s", jsonData)
 }
 
 func (s *Server) sendHTML(conn net.Conn, html string) {
@@ -1379,6 +2159,24 @@ func (s *Server) sendPNG(conn net.Conn, png []byte) {
 	conn.Write(png)
 }
 
+func (s *Server) sendText(conn net.Conn, text string) {
+	fmt.Fprintf(conn, "HTTP/1.0 200 OK\r\n")
+	fmt.Fprintf(conn, "Content-Type: text/plain\r\n")
+	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(text))
+	fmt.Fprintf(conn, "\r\n")
+	fmt.Fprintf(conn, "%s", text)
+}
+
+func (s *Server) sendJS(conn net.Conn, js string) {
+	fmt.Fprintf(conn, "HTTP/1.0 200 OK\r\n")
+	s.writeCORSHeaders(conn)
+	fmt.Fprintf(conn, "Content-Type: application/javascript; charset=utf-8\r\n")
+	fmt.Fprintf(conn, "Cache-Control: public, max-age=3600\r\n")
+	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(js))
+	fmt.Fprintf(conn, "\r\n")
+	fmt.Fprintf(conn, "%s", js)
+}
+
 func (s *Server) sendNotFound(conn net.Conn) {
 	fmt.Fprintf(conn, "HTTP/1.0 404 Not Found\r\n")
 	fmt.Fprintf(conn, "\r\n")
@@ -1387,6 +2185,7 @@ func (s *Server) sendNotFound(conn net.Conn) {
 
 func (s *Server) sendBadRequest(conn net.Conn) {
 	fmt.Fprintf(conn, "HTTP/1.1 400 Bad Request\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Content-Type: text/plain\r\n")
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "Invalid request\n")
@@ -1394,6 +2193,7 @@ func (s *Server) sendBadRequest(conn net.Conn) {
 
 func (s *Server) sendUnauthorized(conn net.Conn, message string) {
 	fmt.Fprintf(conn, "HTTP/1.1 401 Unauthorized\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Content-Type: text/plain\r\n")
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "Access denied: %s\n", message)
@@ -1401,6 +2201,7 @@ func (s *Server) sendUnauthorized(conn net.Conn, message string) {
 
 func (s *Server) sendError(conn net.Conn, err error) {
 	fmt.Fprintf(conn, "HTTP/1.0 500 Internal Server Error\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "Error: %v", err)
 }
@@ -1414,6 +2215,7 @@ func (s *Server) sendErrorWithStatus(conn net.Conn, statusCode int, message stri
 		statusText = "Too Many Requests"
 	}
 	fmt.Fprintf(conn, "HTTP/1.0 %d %s\r\n", statusCode, statusText)
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Connection: close\r\n")
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "%s", message)
