@@ -769,6 +769,12 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 	statusCode := 200 // default to 200 OK
 	var username string
 
+	// Handle CORS preflight requests
+	if req.Method == "OPTIONS" {
+		s.sendCORSPreflight(conn)
+		return
+	}
+
 	// Record IP statistics
 	s.ipStats.RecordRequest(peerHost)
 
@@ -865,6 +871,9 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 		return
 	case "robots.txt":
 		s.ServeRobotsTxt(conn)
+		return
+	case "moustique.js":
+		s.ServeMoustiqueJS(conn)
 		return
 	}
 
@@ -2068,8 +2077,24 @@ func (s *Server) handleAdminAllIPs(conn net.Conn, params map[string]string) {
 
 // Response helpers
 
+// CORS headers for cross-origin requests (landing page on port 80 calling API on port 33334)
+func (s *Server) writeCORSHeaders(conn net.Conn) {
+	fmt.Fprintf(conn, "Access-Control-Allow-Origin: *\r\n")
+	fmt.Fprintf(conn, "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n")
+	fmt.Fprintf(conn, "Access-Control-Allow-Headers: Content-Type, Authorization\r\n")
+	fmt.Fprintf(conn, "Access-Control-Max-Age: 86400\r\n")
+}
+
+func (s *Server) sendCORSPreflight(conn net.Conn) {
+	fmt.Fprintf(conn, "HTTP/1.1 204 No Content\r\n")
+	s.writeCORSHeaders(conn)
+	fmt.Fprintf(conn, "Content-Length: 0\r\n")
+	fmt.Fprintf(conn, "\r\n")
+}
+
 func (s *Server) sendOK(conn net.Conn) {
 	fmt.Fprintf(conn, "HTTP/1.0 200 OK\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Connection: close\r\n")
 	fmt.Fprintf(conn, "Content-Length: 0\r\n")
 	fmt.Fprintf(conn, "\r\n")
@@ -2085,6 +2110,7 @@ func (s *Server) sendJSON(conn net.Conn, data interface{}) {
 	encoded := encodeROT13Base64(string(jsonData))
 
 	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Connection: close\r\n")
 	fmt.Fprintf(conn, "Keep-Alive: timeout=15, max=500\r\n")
 	fmt.Fprintf(conn, "Content-Type: text/plain; charset=utf-8\r\n")
@@ -2102,6 +2128,7 @@ func (s *Server) sendPlainJSON(conn net.Conn, data interface{}) {
 	}
 
 	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Connection: close\r\n")
 	fmt.Fprintf(conn, "Content-Type: application/json\r\n")
 	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(jsonData))
@@ -2140,6 +2167,16 @@ func (s *Server) sendText(conn net.Conn, text string) {
 	fmt.Fprintf(conn, "%s", text)
 }
 
+func (s *Server) sendJS(conn net.Conn, js string) {
+	fmt.Fprintf(conn, "HTTP/1.0 200 OK\r\n")
+	s.writeCORSHeaders(conn)
+	fmt.Fprintf(conn, "Content-Type: application/javascript; charset=utf-8\r\n")
+	fmt.Fprintf(conn, "Cache-Control: public, max-age=3600\r\n")
+	fmt.Fprintf(conn, "Content-Length: %d\r\n", len(js))
+	fmt.Fprintf(conn, "\r\n")
+	fmt.Fprintf(conn, "%s", js)
+}
+
 func (s *Server) sendNotFound(conn net.Conn) {
 	fmt.Fprintf(conn, "HTTP/1.0 404 Not Found\r\n")
 	fmt.Fprintf(conn, "\r\n")
@@ -2148,6 +2185,7 @@ func (s *Server) sendNotFound(conn net.Conn) {
 
 func (s *Server) sendBadRequest(conn net.Conn) {
 	fmt.Fprintf(conn, "HTTP/1.1 400 Bad Request\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Content-Type: text/plain\r\n")
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "Invalid request\n")
@@ -2155,6 +2193,7 @@ func (s *Server) sendBadRequest(conn net.Conn) {
 
 func (s *Server) sendUnauthorized(conn net.Conn, message string) {
 	fmt.Fprintf(conn, "HTTP/1.1 401 Unauthorized\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Content-Type: text/plain\r\n")
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "Access denied: %s\n", message)
@@ -2162,6 +2201,7 @@ func (s *Server) sendUnauthorized(conn net.Conn, message string) {
 
 func (s *Server) sendError(conn net.Conn, err error) {
 	fmt.Fprintf(conn, "HTTP/1.0 500 Internal Server Error\r\n")
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "Error: %v", err)
 }
@@ -2175,6 +2215,7 @@ func (s *Server) sendErrorWithStatus(conn net.Conn, statusCode int, message stri
 		statusText = "Too Many Requests"
 	}
 	fmt.Fprintf(conn, "HTTP/1.0 %d %s\r\n", statusCode, statusText)
+	s.writeCORSHeaders(conn)
 	fmt.Fprintf(conn, "Connection: close\r\n")
 	fmt.Fprintf(conn, "\r\n")
 	fmt.Fprintf(conn, "%s", message)
