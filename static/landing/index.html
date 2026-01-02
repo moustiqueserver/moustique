@@ -493,6 +493,66 @@ chmod +x moustique-cli
         </div>
     </section>
 
+    <!-- Admin Demo -->
+    <section class="admin-demo">
+        <div class="container">
+            <h2 class="section-title">Powerful Admin Interface</h2>
+            <p style="text-align: center; font-size: 1.2em; color: #4a5568; margin-bottom: 40px;">
+                Monitor and manage your message broker with ease
+            </p>
+
+            <div class="demo-box">
+                <h3 style="margin-bottom: 30px; font-size: 1.6em;">Real-time Monitoring</h3>
+
+                <img src="admin.png" alt="Moustique Admin Interface" class="demo-screenshot">
+
+                <div class="feature-grid" style="margin-top: 30px;">
+                    <div>
+                        <h4 style="color: #56ab2f; margin-bottom: 15px;">📊 Live Statistics</h4>
+                        <ul style="line-height: 2; color: #4a5568;">
+                            <li>Active clients and connections</li>
+                            <li>Message throughput metrics</li>
+                            <li>Topics and subscriptions</li>
+                            <li>Request rate monitoring</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: #56ab2f; margin-bottom: 15px;">👥 User Management</h4>
+                        <ul style="line-height: 2; color: #4a5568;">
+                            <li>Create and manage users</li>
+                            <li>Set rate limits per user</li>
+                            <li>View user activity logs</li>
+                            <li>Multi-tenant isolation</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: #56ab2f; margin-bottom: 15px;">🔍 Debugging Tools</h4>
+                        <ul style="line-height: 2; color: #4a5568;">
+                            <li>Live message inspection</li>
+                            <li>Client connection details</li>
+                            <li>Server logs viewer</li>
+                            <li>Performance diagnostics</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="demo-login" style="margin-top: 40px;">
+                    <h4 style="margin-bottom: 15px;">🎮 Try the Admin Demo</h4>
+                    <p style="color: #4a5568; margin-bottom: 15px;">
+                        Experience the admin interface with our test account:
+                    </p>
+                    <div class="demo-credentials">
+                        URL: <strong><span id="admin-url"></span>/admin</strong><br>
+                        Username: <strong>demo</strong><br>
+                        Password: <strong>demo123</strong>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <a href="#" class="btn btn-primary" style="background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%); color: white;" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Open Admin Interface</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 
     <!-- Features -->
     <section class="features">
@@ -580,67 +640,6 @@ chmod +x moustique-cli
 
             <div style="text-align: center; margin-top: 40px; opacity: 0.9;">
                 <p><strong>Coming Soon:</strong> Pro plans with higher limits, SLA guarantees, and priority support</p>
-            </div>
-        </div>
-    </section>
-
-    <!-- Admin Demo -->
-    <section class="admin-demo">
-        <div class="container">
-            <h2 class="section-title">Powerful Admin Interface</h2>
-            <p style="text-align: center; font-size: 1.2em; color: #4a5568; margin-bottom: 40px;">
-                Monitor and manage your message broker with ease
-            </p>
-
-            <div class="demo-box">
-                <h3 style="margin-bottom: 30px; font-size: 1.6em;">Real-time Monitoring</h3>
-
-                <img src="admin.png" alt="Moustique Admin Interface" class="demo-screenshot">
-
-                <div class="feature-grid" style="margin-top: 30px;">
-                    <div>
-                        <h4 style="color: #56ab2f; margin-bottom: 15px;">📊 Live Statistics</h4>
-                        <ul style="line-height: 2; color: #4a5568;">
-                            <li>Active clients and connections</li>
-                            <li>Message throughput metrics</li>
-                            <li>Topics and subscriptions</li>
-                            <li>Request rate monitoring</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h4 style="color: #56ab2f; margin-bottom: 15px;">👥 User Management</h4>
-                        <ul style="line-height: 2; color: #4a5568;">
-                            <li>Create and manage users</li>
-                            <li>Set rate limits per user</li>
-                            <li>View user activity logs</li>
-                            <li>Multi-tenant isolation</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h4 style="color: #56ab2f; margin-bottom: 15px;">🔍 Debugging Tools</h4>
-                        <ul style="line-height: 2; color: #4a5568;">
-                            <li>Live message inspection</li>
-                            <li>Client connection details</li>
-                            <li>Server logs viewer</li>
-                            <li>Performance diagnostics</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="demo-login" style="margin-top: 40px;">
-                    <h4 style="margin-bottom: 15px;">🎮 Try the Admin Demo</h4>
-                    <p style="color: #4a5568; margin-bottom: 15px;">
-                        Experience the admin interface with our test account:
-                    </p>
-                    <div class="demo-credentials">
-                        URL: <strong><span id="admin-url"></span>/admin</strong><br>
-                        Username: <strong>demo</strong><br>
-                        Password: <strong>demo123</strong>
-                    </div>
-                    <div style="margin-top: 20px;">
-                        <a href="#" class="btn btn-primary" style="background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%); color: white;" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Open Admin Interface</a>
-                    </div>
-                </div>
             </div>
         </div>
     </section>

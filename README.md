@@ -27,6 +27,8 @@ Moustique is a simple, fast, and lightweight pub/sub message broker with **dual 
 
 ## 🎬 See It In Action
 
+![Moustique Admin Interface](docs/admin.png)
+
 Check out our [interactive demos](demos/) to see Moustique in action, or try the Quick Start below:
 
 ## 🚀 Quick Start
@@ -109,7 +111,7 @@ See [CLI documentation](cmd/moustique-cli/README.md) for more details.
 
 ## 📚 Client Libraries
 
-Moustique has official clients for the most popular programming languages:
+Moustique has official clients for the most popular programming languages. **If you only need MQTT**, any standard MQTT client library works perfectly — including `paho-mqtt` (Python), `mqtt.js` (JavaScript), `Eclipse Paho` (Java/Go), or command-line tools like `mosquitto_pub`/`mosquitto_sub`.
 
 ### Python
 
@@ -521,34 +523,6 @@ security:
   max_message_size: 1048576  # 1MB
   default_rate_limit: 1000   # Requests per minute (0 = unlimited)
 ```
-
-### API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/SUBSCRIBE` | POST | Subscribe to a topic |
-| `/POST` | POST | Publish a message |
-| `/PICKUP` | POST | Get pending messages |
-| `/GETVAL` | POST | Get stored value |
-| `/GETVALSBYREGEX` | POST | Search values by pattern |
-| `/STATUS` | POST | Get broker status (auth required) |
-| `/STATS` | POST | Get statistics (auth required) |
-| `/CLIENTS` | POST | List active clients (auth required) |
-| `/TOPICS` | POST | List all topics (auth required) |
-
-### Encoding
-
-Moustique uses ROT13+Base64 encoding for a lightweight security layer:
-
-```bash
-# Encode
-echo -n "my-topic" | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m'
-
-# Decode  
-echo "encoded" | tr 'A-Za-z' 'N-ZA-Mn-za-m' | base64 -d
-```
-
-Client libraries handle this automatically.
 
 ## 🐳 Docker
 
