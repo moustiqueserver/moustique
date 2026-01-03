@@ -731,8 +731,8 @@
             if (tabName === 'clients') loadClients();
             if (tabName === 'posters') loadPosters();
             if (tabName === 'credits') loadCredits();
-            if (tabName === 'subscribe') startPickup();
-            else stopPickup();
+            // Don't auto-start pickup - only start after first subscription
+            if (tabName !== 'subscribe') stopPickup();
         }
 
         async function handlePublish(event) {

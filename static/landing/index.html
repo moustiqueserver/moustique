@@ -993,6 +993,8 @@ chmod +x moustique-cli
 
             // Subscribe to /demo/# and handle incoming messages
             demoClient.subscribe('#', function(topic, message, from) {
+                // Filter out system messages
+                if (topic.indexOf('/server') === 0 || topic.indexOf('/system') === 0) return;
                 addMessageToDisplay(topic, message, from);
             }).then(function(success) {
                 if (success) {
