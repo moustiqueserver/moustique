@@ -183,10 +183,33 @@
             border-radius: 15px;
             box-shadow: 0 5px 20px rgba(0,0,0,0.1);
             transition: transform 0.2s;
+            position: relative;
+            overflow: hidden;
         }
 
         .stat-card:hover {
             transform: translateY(-5px);
+        }
+
+        .sparkline {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60%;
+            opacity: 0.15;
+            pointer-events: none;
+        }
+
+        .sparkline path {
+            fill: none;
+            stroke: #56ab2f;
+            stroke-width: 2;
+        }
+
+        .sparkline .area {
+            fill: url(#sparkGradient);
+            stroke: none;
         }
 
         .stat-label {
@@ -480,13 +503,25 @@
             <button class="logout-btn" onclick="logout()">Logout</button>
         </header>
 
+        <!-- SVG gradient definition for sparklines -->
+        <svg width="0" height="0" style="position:absolute">
+            <defs>
+                <linearGradient id="sparkGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:#56ab2f;stop-opacity:0.6" />
+                    <stop offset="100%" style="stop-color:#56ab2f;stop-opacity:0" />
+                </linearGradient>
+            </defs>
+        </svg>
+
         <div class="stats-grid">
             <div class="stat-card">
+                <svg class="sparkline" id="sparkline-requests" viewBox="0 0 100 50" preserveAspectRatio="none"></svg>
                 <div class="stat-label">Total Requests</div>
                 <div class="stat-value" id="total-requests">0</div>
                 <div class="stat-subvalue" id="req-per-sec">0 req/s</div>
             </div>
             <div class="stat-card">
+                <svg class="sparkline" id="sparkline-messages" viewBox="0 0 100 50" preserveAspectRatio="none"></svg>
                 <div class="stat-label">Messages Processed</div>
                 <div class="stat-value" id="total-messages">0</div>
                 <div class="stat-subvalue" id="msg-per-sec">0 msg/s</div>
@@ -647,6 +682,35 @@
         const API_BASE = window.location.origin;
         let subscribedTopics = new Set();
         let receivedMessages = [];
+
+        // Sparkline history (12 points = 1 minute at 5s intervals)
+        const SPARKLINE_POINTS = 12;
+        let requestsHistory = [];
+        let messagesHistory = [];
+
+        function updateSparkline(svgId, history) {
+            const svg = document.getElementById(svgId);
+            if (!svg || history.length < 2) return;
+
+            const width = 100;
+            const height = 50;
+            const max = Math.max(...history, 0.1);
+            const points = history.map((val, i) => {
+                const x = (i / (SPARKLINE_POINTS - 1)) * width;
+                const y = height - (val / max) * height * 0.9;
+                return `${x},${y}`;
+            });
+
+            // Create area path (filled)
+            const areaPath = `M0,${height} L${points.join(' L')} L${width},${height} Z`;
+            // Create line path
+            const linePath = `M${points.join(' L')}`;
+
+            svg.innerHTML = `
+                <path class="area" d="${areaPath}"/>
+                <path d="${linePath}"/>
+            `;
+        }
 
         function rot13(str) {
             return str.replace(/[a-zA-Z]/g, function(c) {
@@ -994,6 +1058,14 @@
                 document.getElementById('active-posters').textContent = activePosters + ' posters';
                 document.getElementById('total-topics').textContent = totalTopics.toLocaleString();
                 document.getElementById('values-count').textContent = valuesCount + ' values';
+
+                // Update sparkline history
+                requestsHistory.push(parseFloat(requestsPerSecond));
+                messagesHistory.push(parseFloat(messagesPerSecond));
+                if (requestsHistory.length > SPARKLINE_POINTS) requestsHistory.shift();
+                if (messagesHistory.length > SPARKLINE_POINTS) messagesHistory.shift();
+                updateSparkline('sparkline-requests', requestsHistory);
+                updateSparkline('sparkline-messages', messagesHistory);
             } catch (error) {
                 console.error('Failed to load stats:', error);
                 if (error.message && error.message.includes('401')) {

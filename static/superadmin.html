@@ -66,6 +66,29 @@
             padding: 25px;
             border-radius: 12px;
             text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sparkline {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60%;
+            opacity: 0.2;
+            pointer-events: none;
+        }
+
+        .sparkline path {
+            fill: none;
+            stroke: white;
+            stroke-width: 2;
+        }
+
+        .sparkline .area {
+            fill: rgba(255, 255, 255, 0.3);
+            stroke: none;
         }
 
         .stat-value {
@@ -294,11 +317,13 @@
                 <div class="stat-label">Total Users</div>
             </div>
             <div class="stat-box">
+                <svg class="sparkline" id="sparkline-requests" viewBox="0 0 100 50" preserveAspectRatio="none"></svg>
                 <div class="stat-value" id="total-requests">0</div>
                 <div class="stat-label" id="requests-label">Total Requests</div>
                 <div style="font-size: 0.8em; margin-top: 5px; opacity: 0.8;" id="requests-rate">0 req/s</div>
             </div>
             <div class="stat-box">
+                <svg class="sparkline" id="sparkline-messages" viewBox="0 0 100 50" preserveAspectRatio="none"></svg>
                 <div class="stat-value" id="total-messages">0</div>
                 <div class="stat-label" id="messages-label">Total Messages</div>
                 <div style="font-size: 0.8em; margin-top: 5px; opacity: 0.8;" id="messages-rate">0 msg/s</div>
@@ -392,6 +417,35 @@
     <script>
         const API_BASE = window.location.origin;
         let usersData = [];
+
+        // Sparkline history (12 points = 2 minutes at 10s intervals)
+        const SPARKLINE_POINTS = 12;
+        let requestsHistory = [];
+        let messagesHistory = [];
+
+        function updateSparkline(svgId, history) {
+            const svg = document.getElementById(svgId);
+            if (!svg || history.length < 2) return;
+
+            const width = 100;
+            const height = 50;
+            const max = Math.max(...history, 0.1);
+            const points = history.map((val, i) => {
+                const x = (i / (SPARKLINE_POINTS - 1)) * width;
+                const y = height - (val / max) * height * 0.9;
+                return `${x},${y}`;
+            });
+
+            // Create area path (filled)
+            const areaPath = `M0,${height} L${points.join(' L')} L${width},${height} Z`;
+            // Create line path
+            const linePath = `M${points.join(' L')}`;
+
+            svg.innerHTML = `
+                <path class="area" d="${areaPath}"/>
+                <path d="${linePath}"/>
+            `;
+        }
 
         function rot13(str) {
             return str.replace(/[a-zA-Z]/g, function(c) {
@@ -669,7 +723,15 @@
                 document.getElementById('active-brokers').textContent = activeBrokers;
                 document.getElementById('requests-rate').textContent = requestsPerSecond + ' req/s';
                 document.getElementById('messages-rate').textContent = messagesPerSecond + ' msg/s';
-                
+
+                // Update sparkline history
+                requestsHistory.push(parseFloat(requestsPerSecond));
+                messagesHistory.push(parseFloat(messagesPerSecond));
+                if (requestsHistory.length > SPARKLINE_POINTS) requestsHistory.shift();
+                if (messagesHistory.length > SPARKLINE_POINTS) messagesHistory.shift();
+                updateSparkline('sparkline-requests', requestsHistory);
+                updateSparkline('sparkline-messages', messagesHistory);
+
             } catch (error) {
                 console.error('Failed to load users:', error);
                 container.innerHTML = '<div class="error">Failed to load users</div>';
