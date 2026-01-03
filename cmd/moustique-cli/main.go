@@ -141,6 +141,41 @@ func (c *Client) PutVal(topic, value string) error {
 	return nil
 }
 
+func (c *Client) GetVal(topic string) *message {
+	payload := c.addAuth(url.Values{
+		"topic":  {encode(topic)},
+		"client": {encode(c.ClientName)},
+	})
+	
+	req, _ := http.NewRequest("POST", c.BaseURL+"/GETVAL", bytes.NewBufferString(payload.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil //, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != 308 {
+		//body, _ := io.ReadAll(resp.Body)
+		return nil //, fmt.Errorf("getval failed: %d %s", resp.StatusCode, string(body))
+	}
+	body, _ := io.ReadAll(resp.Body)
+
+	decrypted := decode(string(body))
+	if decrypted == "" {
+		return nil //, nil
+	}
+
+	// Parse JSON: map[string]message
+	//var data map[string]message
+	var msg *message
+	if err := json.Unmarshal([]byte(decrypted), &msg); err != nil {
+		return nil //, nil
+	}
+	//fmt.Printf("Message: %s : %s", msg.Topic, msg.Message)
+	return msg //, err
+}
+
 func (c *Client) Subscribe(topic string, callback func(topic, message, from string)) error {
 	payload := c.addAuth(url.Values{
 		"topic":  {encode(topic)},
@@ -253,6 +288,20 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "get", "getval":
+		if *topic == "" {
+			fmt.Println("Error: -t (topic) is required for get")
+			os.Exit(1)
+		}
+		//if
+		mess := client.GetVal(*topic)
+		/*; err != nil {
+			fmt.Printf("Error getting: %v\n", err)
+			os.Exit(1)
+		}*/
+
+		fmt.Printf("Topic: %s, Message: %s", mess.Topic, mess.Message)
+
 	case "put", "putval":
 		if *topic == "" || *message == "" {
 			fmt.Println("Error: -t (topic) and -m (message) are required for putval")
@@ -341,6 +390,9 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("  # Put a value")
 	fmt.Println("  moustique-cli -a put -t /config/setting -m \"value123\"")
+	fmt.Println()
+	fmt.Println("  # Get a value")
+	fmt.Println("  moustique-cli -a get -t /config/setting -u alice -pwd secret123")
 	fmt.Println()
 	fmt.Println("  # Connect to remote server")
 	fmt.Println("  moustique-cli -h moustique.host -p 33334 -a pub -t /remote/topic -m \"Hi\"")
