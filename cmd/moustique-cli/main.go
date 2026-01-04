@@ -146,7 +146,7 @@ func (c *Client) GetVal(topic string) *message {
 		"topic":  {encode(topic)},
 		"client": {encode(c.ClientName)},
 	})
-	
+
 	req, _ := http.NewRequest("POST", c.BaseURL+"/GETVAL", bytes.NewBufferString(payload.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 

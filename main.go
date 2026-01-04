@@ -172,12 +172,17 @@ func main() {
 		}()
 	}
 
-	// Start landing page server on port 80 in goroutine
-	go func() {
-		if err := StartLandingServer(ctx, logger); err != nil {
-			logger.Printf("Landing server error: %v", err)
-		}
-	}()
+	// Start landing page server if configured (port > 0)
+	if config.Server.LandingPort != nil && *config.Server.LandingPort > 0 {
+		landingPort := *config.Server.LandingPort
+		go func() {
+			if err := StartLandingServer(ctx, landingPort, logger); err != nil {
+				logger.Printf("Landing server error: %v", err)
+			}
+		}()
+	} else {
+		logger.Println("Landing page server disabled (landing_port: 0)")
+	}
 
 	// Start main server in goroutine
 	go func() {

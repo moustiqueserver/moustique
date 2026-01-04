@@ -14,8 +14,8 @@ var moustiqueLogo []byte
 //go:embed static/landing/admin.png
 var adminPng []byte
 
-// StartLandingServer starts the HTTP server on port 80 for the landing page
-func StartLandingServer(ctx context.Context, logger *log.Logger) error {
+// StartLandingServer starts the HTTP server for the landing page on the specified port
+func StartLandingServer(ctx context.Context, port int, logger *log.Logger) error {
 	mux := http.NewServeMux()
 
 	// Serve landing page
@@ -53,13 +53,13 @@ func StartLandingServer(ctx context.Context, logger *log.Logger) error {
 	})
 
 	server := &http.Server{
-		Addr:    ":80",
+		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 	}
 
 	// Start server in background
 	go func() {
-		logger.Println("Landing page server starting on http://0.0.0.0:80")
+		logger.Printf("Landing page server starting on http://0.0.0.0:%d", port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Printf("Landing server error: %v", err)
 		}

@@ -29,6 +29,7 @@ type SystemEventsConfig struct {
 type ServerConfig struct {
 	Port           int           `yaml:"port"`
 	MQTTPort       int           `yaml:"mqtt_port"`        // MQTT listener port, 0 = disabled
+	LandingPort    *int          `yaml:"landing_port"`     // Landing page port: nil/not set = 80, 0 = disabled, >0 = custom port
 	Timeout        time.Duration `yaml:"timeout"`
 	AllowPublic    *bool         `yaml:"allow_public"` // Pointer to detect if set
 	MaxRequestSize int64         `yaml:"max_request_size"` // in bytes, 0 = unlimited
@@ -89,6 +90,12 @@ func LoadConfig(path string) (*Config, error) {
 	if config.Server.Port == 0 {
 		config.Server.Port = 33334
 	}
+	// Landing port defaults to 80 if not set
+	// To disable landing server, explicitly set landing_port: 0 in config
+	if config.Server.LandingPort == nil {
+		defaultPort := 80
+		config.Server.LandingPort = &defaultPort
+	}
 	// MQTT port defaults to 1883 if not explicitly set to 0
 	// To disable MQTT, explicitly set mqtt_port: 0 in config
 	if config.Server.Timeout == 0 {
@@ -132,9 +139,11 @@ func LoadConfig(path string) (*Config, error) {
 // GenerateDefaultConfig generates a default configuration file
 func GenerateDefaultConfig(path string) error {
 	defaultAllowPublic := false
+	defaultLandingPort := 80
 	config := Config{
 		Server: ServerConfig{
 			Port:           33334,
+			LandingPort:    &defaultLandingPort,
 			Timeout:        30 * time.Second,
 			AllowPublic:    &defaultAllowPublic,
 			MaxRequestSize: 10 * 1024 * 1024, // 10MB
