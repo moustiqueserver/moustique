@@ -80,8 +80,9 @@ func recordLandingInvalidRequest(cfg *LandingServerConfig, ip string, path strin
 		// Execute fail2ban command in background
 		go func(jail, banIP string) {
 			cmd := exec.Command("sudo", "fail2ban-client", "set", jail, "banip", banIP)
-			if err := cmd.Run(); err != nil {
-				cfg.Logger.Printf("Landing: Warning - Failed to ban IP %s via fail2ban jail %s: %v", banIP, jail, err)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				cfg.Logger.Printf("Landing: Warning - Failed to ban IP %s via fail2ban jail %s: %v (output: %s)", banIP, jail, err, string(output))
 			} else {
 				cfg.Logger.Printf("Landing: Successfully banned IP %s via fail2ban jail %s", banIP, jail)
 			}
