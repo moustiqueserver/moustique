@@ -517,7 +517,7 @@
             <p style="margin-top: 15px; opacity: 0.9;">Compatible with mosquitto, standard MQTT clients, and REST APIs</p>
             <div class="cta-buttons">
                 <a href="#quickstart" class="btn btn-primary" onclick="event.preventDefault(); document.getElementById('quickstart').scrollIntoView({ behavior: 'smooth' });">Get Started in 30 Seconds</a>
-                <a href="#" class="btn btn-secondary" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Try Cloud Service (Free)</a>
+                <a href="#" class="btn btn-secondary" onclick="goToApi('/admin'); return false;">Try Cloud Service (Free)</a>
             </div>
         </div>
     </header>
@@ -540,7 +540,7 @@
                         Send Message
                     </button>
                     <p class="demo-hint">Messages are sent to our live demo server<br>
-                        <a href="#" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;" style="color: #a8e063;">Open Admin Interface</a> to see all activity</p>
+                        <a href="#" onclick="goToApi('/admin'); return false;" style="color: #a8e063;">Open Admin Interface</a> to see all activity</p>
                 </div>
 
                 <!-- Subscribe Panel -->
@@ -744,7 +744,7 @@ chmod +x moustique-cli
                         Password: <strong>demo123</strong>
                     </div>
                     <div style="margin-top: 20px;">
-                        <a href="#" class="btn btn-primary" style="background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%); color: white;" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Open Admin Interface</a>
+                        <a href="#" class="btn btn-primary" style="background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%); color: white;" onclick="goToApi('/admin'); return false;">Open Admin Interface</a>
                     </div>
                 </div>
             </div>
@@ -829,8 +829,8 @@ chmod +x moustique-cli
                         Password: <strong>demo123</strong>
                     </div>
                     <div style="margin-top: 30px;">
-                        <a href="#" class="btn btn-primary" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Launch Cloud Console</a>
-                        <a href="#" class="btn btn-secondary" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/signup'; return false;">Create Free Account</a>
+                        <a href="#" class="btn btn-primary" onclick="goToApi('/admin'); return false;">Launch Cloud Console</a>
+                        <a href="#" class="btn btn-secondary" onclick="goToApi('/signup'); return false;">Create Free Account</a>
                     </div>
                 </div>
             </div>
@@ -853,7 +853,7 @@ chmod +x moustique-cli
             <div class="footer-links">
                 <a href="https://github.com/moustiqueserver/moustique">GitHub</a>
                 <a href="#quickstart" onclick="event.preventDefault(); document.getElementById('quickstart').scrollIntoView({ behavior: 'smooth' });">Documentation</a>
-                <a href="#" onclick="window.location.href = window.location.protocol + '//' + window.location.hostname + ':33334/admin'; return false;">Cloud Service</a>
+                <a href="#" onclick="goToApi('/admin'); return false;">Cloud Service</a>
                 <a href="mailto:support@moustique.xyz">Contact</a>
             </div>
             <p style="opacity: 0.7; margin-top: 20px;">
@@ -863,12 +863,24 @@ chmod +x moustique-cli
     </footer>
 
     <script>
+        // Determine API port based on protocol (33335 for HTTPS, 33334 for HTTP)
+        function getApiPort() {
+            return window.location.protocol === 'https:' ? '33335' : '33334';
+        }
+
+        // Get full API URL with correct port
+        function getApiUrl(path) {
+            return window.location.protocol + '//' + window.location.hostname + ':' + getApiPort() + (path || '');
+        }
+
+        // Navigate to API path
+        function goToApi(path) {
+            window.location.href = getApiUrl(path);
+        }
+
         // Set current hostname for demo URL
         document.addEventListener('DOMContentLoaded', function() {
-            const protocol = window.location.protocol;
-            const hostname = window.location.hostname;
-            const port = window.location.port ? ':' + window.location.port : '';
-            document.getElementById('admin-url').textContent = protocol + '//' + hostname + port;
+            document.getElementById('admin-url').textContent = getApiUrl('');
         });
 
         function showTab(language) {
@@ -984,7 +996,7 @@ chmod +x moustique-cli
             // Create client using the Moustique browser library
             demoClient = new Moustique({
                 ip: window.location.hostname,
-                port: '33334',
+                port: getApiPort(),
                 protocol: window.location.protocol,
                 username: 'demo',
                 password: 'demo123',
@@ -1017,7 +1029,7 @@ chmod +x moustique-cli
         // Load Moustique client from API server, then initialize demo
         document.addEventListener('DOMContentLoaded', function() {
             var script = document.createElement('script');
-            script.src = window.location.protocol + '//' + window.location.hostname + ':33334/moustique.js';
+            script.src = window.location.protocol + '//' + window.location.hostname + ':' + getApiPort() + '/moustique.js';
             script.onload = initDemo;
             script.onerror = function() {
                 updateStatus(false, 'Failed to load client');

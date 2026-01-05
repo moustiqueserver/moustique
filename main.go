@@ -78,6 +78,18 @@ func main() {
 
 	logger := log.New(logOutput, "[moustique] ", log.LstdFlags)
 
+	// Setup error logger for moustique_err.log
+	var errorLogger *log.Logger
+	if config.Logging.Directory != "" {
+		errLogPath := filepath.Join(config.Logging.Directory, "moustique_err.log")
+		errFile, err := os.OpenFile(errLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			logger.Printf("Warning: Could not open error log %s: %v", errLogPath, err)
+		} else {
+			errorLogger = log.New(errFile, "[moustique-err] ", log.LstdFlags)
+		}
+	}
+
 	fileVersion, err := GetFileVersion()
 	if err != nil {
 		logger.Printf("Warning: Could not calculate file version: %v", err)
@@ -174,9 +186,15 @@ func main() {
 
 	// Start landing page server if configured (port > 0)
 	if config.Server.LandingPort != nil && *config.Server.LandingPort > 0 {
-		landingPort := *config.Server.LandingPort
+		landingCfg := &LandingServerConfig{
+			Port:               *config.Server.LandingPort,
+			Logger:             logger,
+			ErrorLogger:        errorLogger,
+			Fail2banJail:       config.Security.Fail2banJail,
+			SystemEventsBroker: nil, // Not available yet, initialized in server.Start()
+		}
 		go func() {
-			if err := StartLandingServer(ctx, landingPort, logger); err != nil {
+			if err := StartLandingServer(ctx, landingCfg); err != nil {
 				logger.Printf("Landing server error: %v", err)
 			}
 		}()
