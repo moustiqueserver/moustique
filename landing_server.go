@@ -28,11 +28,11 @@ type LandingCrook struct {
 
 // LandingServerConfig holds configuration for the landing server
 type LandingServerConfig struct {
-	Port                int
-	Logger              *log.Logger
-	ErrorLogger         *log.Logger
-	Fail2banJail        string
-	SystemEventsBroker  *Broker
+	Port               int
+	Logger             *log.Logger
+	ErrorLogger        *log.Logger
+	Fail2banJail       string
+	SystemEventsBroker *Broker
 }
 
 var (
@@ -134,6 +134,13 @@ func StartLandingServer(ctx context.Context, cfg *LandingServerConfig) error {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, landingHTML)
+	})
+
+	// Serve robots.txt
+	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, robotsTxt)
 	})
 
 	// Serve favicon
