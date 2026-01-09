@@ -69,15 +69,20 @@ type message struct {
 }
 
 // NewClient creates a new Moustique client
-func NewClient(ip, port, clientName, username, password string) *Client {
+func NewClient(ip, port, clientName, username, password string, useTLS bool) *Client {
 	if clientName == "" {
 		hostname, _ := os.Hostname()
 		clientName = hostname + "-cli"
 	}
 	clientName += "-" + uuid.New().String()[:8]
 
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+
 	return &Client{
-		BaseURL:    fmt.Sprintf("http://%s:%s", ip, port),
+		BaseURL:    fmt.Sprintf("%s://%s:%s", scheme, ip, port),
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 		ClientName: clientName,
 		Username:   username,
@@ -263,6 +268,7 @@ func main() {
 	clientName := flag.String("n", "", "Client name (auto-generated if not provided)")
 	username := flag.String("u", "", "Username for authentication (optional)")
 	password := flag.String("pwd", "", "Password for authentication (optional)")
+	useTLS := flag.Bool("s", false, "Use HTTPS/TLS (secure mode)")
 	verbose := flag.Bool("v", false, "Verbose output")
 	help := flag.Bool("help", false, "Show help")
 
@@ -274,7 +280,7 @@ func main() {
 	}
 
 	// Create client
-	client := NewClient(*host, *port, *clientName, *username, *password)
+	client := NewClient(*host, *port, *clientName, *username, *password, *useTLS)
 
 	// Execute action
 	switch *action {
@@ -372,6 +378,7 @@ func printHelp() {
 	fmt.Println("  -n string      Client name (auto-generated if not provided)")
 	fmt.Println("  -u string      Username for authentication (optional)")
 	fmt.Println("  -pwd string    Password for authentication (optional)")
+	fmt.Println("  -s             Use HTTPS/TLS (secure mode)")
 	fmt.Println("  -v             Verbose output")
 	fmt.Println("  -help          Show this help message")
 	fmt.Println()
@@ -396,4 +403,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("  # Connect to remote server")
 	fmt.Println("  moustique-cli -h moustique.host -p 33334 -a pub -t /remote/topic -m \"Hi\"")
+	fmt.Println()
+	fmt.Println("  # Connect with TLS/HTTPS (secure mode)")
+	fmt.Println("  moustique-cli -s -h moustique.host -p 33335 -a pub -t /test/topic -m \"Hello\"")
 }

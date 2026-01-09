@@ -140,7 +140,7 @@ func StartLandingServer(ctx context.Context, cfg *LandingServerConfig) error {
 	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, robotsTxt)
+		fmt.Fprint(w, robots)
 	})
 
 	// Serve favicon

@@ -43,6 +43,17 @@ my $POST_RETRIES=5;
 our $GLOBAL_USERNAME = undef;
 our $GLOBAL_PASSWORD = undef;
 
+# Global TLS setting for class methods
+# Set to 1 to use HTTPS instead of HTTP
+our $GLOBAL_USE_TLS = 0;
+
+# Helper to get URL scheme based on TLS setting
+sub _get_scheme {
+  my ($use_tls) = @_;
+  $use_tls = $GLOBAL_USE_TLS unless defined $use_tls;
+  return $use_tls ? "https" : "http";
+}
+
 sub new {
     my $class = shift;
     my %params = @_;
@@ -53,8 +64,12 @@ sub new {
     $name = $name . "-" . int(rand(100)) . "-$pid";
     $self->{name} = $name;
     $server_ip="". ($params{ip} ||"cloud.moustique.xyz");
-    $server_url="http://" . ($params{ip} ||"cloud.moustique.xyz");
+    my $scheme = $params{use_tls} ? "https" : "http";
+    $server_url=$scheme . "://" . ($params{ip} ||"cloud.moustique.xyz");
     $server_port=$params{port} || "33334";
+
+    # TLS support
+    $self->{use_tls} = $params{use_tls} || 0;
 
     # Authentication: use provided credentials, fall back to global, or use undef for public
     $self->{username} = $params{username} // $GLOBAL_USERNAME;
@@ -92,7 +107,8 @@ sub new {
 sub initialize {
   my $self = shift;
   $self->{server_ip}=$server_ip;
-  $self->{server_url}="http://" . $server_ip;
+  my $scheme = $self->{use_tls} ? "https" : "http";
+  $self->{server_url}=$scheme . "://" . $server_ip;
   $self->{server_port}=$server_port;
   $self->{system_callbacks}{"/server/action/resubscribe"}=sub { $self->resubscribe(@_) };
 }
@@ -133,11 +149,12 @@ sub publish {
 }
 
 # Not threaded, class sub
-# Usage: publish_nothread($ip, $port, $topic, $message, $from, $username, $password, $client_name)
+# Usage: publish_nothread($ip, $port, $topic, $message, $from, $username, $password, $client_name, $use_tls)
 sub publish_nothread {
-  my ($ip, $port, $topic, $message, $from, $username, $password, $client_name) = @_;
+  my ($ip, $port, $topic, $message, $from, $username, $password, $client_name, $use_tls) = @_;
   my $retries = 0;
-  my $post_url=$ip . ":" . $port . "/POST";
+  my $scheme = _get_scheme($use_tls);
+  my $post_url=$scheme . "://" . $ip . ":" . $port . "/POST";
 
   # Use provided credentials, fall back to globals, or use undef for public
   $username = $GLOBAL_USERNAME unless defined $username;
@@ -158,9 +175,9 @@ sub publish_nothread {
     $form->{password} = enc($password);
   }
 
-  my $response = $gua->post( "http://" . $post_url, $form);
+  my $response = $gua->post( $post_url, $form);
   while(!$response->is_success && $retries < $POST_RETRIES) { #Forsok $POST_RETRIES ganger eller tills $response->is_success
-    $response = $gua->post( "http://" . $post_url, $form);
+    $response = $gua->post( $post_url, $form);
     $retries+=1;
     warn "Retrying publish [$retries/$POST_RETRIES]";
   }
@@ -171,10 +188,11 @@ sub publish_nothread {
 }
 #
 # Not threaded, class sub
-# Usage: publish_nothread_put($ip, $port, $topic, $message, $from, $username, $password, $client_name)
+# Usage: publish_nothread_put($ip, $port, $topic, $message, $from, $username, $password, $client_name, $use_tls)
 sub publish_nothread_put {
-  my ($ip, $port, $topic, $message, $from, $username, $password, $client_name) = @_;
-  my $post_url=$ip . ":" . $port . "/PUTVAL";
+  my ($ip, $port, $topic, $message, $from, $username, $password, $client_name, $use_tls) = @_;
+  my $scheme = _get_scheme($use_tls);
+  my $post_url=$scheme . "://" . $ip . ":" . $port . "/PUTVAL";
 
   # Use provided credentials, fall back to globals, or use undef for public
   $username = $GLOBAL_USERNAME unless defined $username;
@@ -195,7 +213,7 @@ sub publish_nothread_put {
     $form->{password} = enc($password);
   }
 
-  $gua->put( "http://" . $post_url, $form);
+  $gua->put( $post_url, $form);
 }
 
 sub subscribe {
@@ -348,10 +366,11 @@ sub tick {
 }
 
 sub getval {
-  my ($ip, $port, $valname, $username, $password, $client_name) = @_;
+  my ($ip, $port, $valname, $username, $password, $client_name, $use_tls) = @_;
   #my $ua      = LWP::UserAgent->new(timeout=>5);
   my $retries = 0;
-  my $post_url="http://" . $ip . ":" . $port . "/GETVAL";
+  my $scheme = _get_scheme($use_tls);
+  my $post_url=$scheme . "://" . $ip . ":" . $port . "/GETVAL";
   my $retval=undef;
   my ( $package, $filename, $line, $subroutine ) = caller(2);
 
@@ -388,7 +407,8 @@ sub getval {
 sub get_val {
   my ($self, $valname) = @_;
   my $mua      = $self->{ua}; #/LWP::UserAgent->new(timeout=>5);
-  my $post_url="http://$self->{server_ip}:$self->{server_port}/GETVAL";
+  my $scheme = $self->{use_tls} ? "https" : "http";
+  my $post_url="$scheme://$self->{server_ip}:$self->{server_port}/GETVAL";
   my $retval=undef;
   my $retries = 0;
 
@@ -413,9 +433,10 @@ sub get_val {
 }
 
 sub get_vals_by_regex {
-  my ($ip, $port, $regex, $username, $password, $client_name) = @_;
+  my ($ip, $port, $regex, $username, $password, $client_name, $use_tls) = @_;
   #my $ua      = LWP::UserAgent->new(timeout=>5);
-  my $post_url="http://" . $ip . ":" . $port . "/GETVALSBYREGEX";
+  my $scheme = _get_scheme($use_tls);
+  my $post_url=$scheme . "://" . $ip . ":" . $port . "/GETVALSBYREGEX";
   my $matched;
   my @matched_values;
 
@@ -446,8 +467,8 @@ sub get_vals_by_regex {
 }
 
 sub putval {
-  my ($ip, $port, $topic, $message, $from, $username, $password, $client_name) = @_;
-  publish_nothread_put($ip, $port, $topic, $message, $from, $username, $password, $client_name);
+  my ($ip, $port, $topic, $message, $from, $username, $password, $client_name, $use_tls) = @_;
+  publish_nothread_put($ip, $port, $topic, $message, $from, $username, $password, $client_name, $use_tls);
 }
 
 sub get_version {
@@ -507,7 +528,8 @@ sub get_ {
   my ($self,$ip,$port,$pwd,$endpoint,$retries) = @_;
   $retries ||= 0;
   my $mua      =  $self->{ua}; #LWP::UserAgent->new(timeout=>8);
-  my $post_url="http://" . $ip . ":" . $port . "/$endpoint";
+  my $scheme = $self->{use_tls} ? "https" : "http";
+  my $post_url=$scheme . "://" . $ip . ":" . $port . "/$endpoint";
   my $retval=undef;
 
   my %form;
@@ -529,14 +551,15 @@ sub get_ {
   return $retval;
 }
 
-# Usage: get($ip, $port, $pwd, $endpoint, $retries, $client_name)
+# Usage: get($ip, $port, $pwd, $endpoint, $retries, $client_name, $use_tls)
 sub get {
-  my ($ip,$port,$pwd,$endpoint,$retries,$client_name) = @_;
+  my ($ip,$port,$pwd,$endpoint,$retries,$client_name,$use_tls) = @_;
   $retries ||= 0;
   $client_name = $name unless defined $client_name;  # Fall back to global if not provided
 
   #my $ua      = LWP::UserAgent->new(timeout=>8);
-  my $post_url="http://" . $ip . ":" . $port . "/$endpoint";
+  my $scheme = _get_scheme($use_tls);
+  my $post_url=$scheme . "://" . $ip . ":" . $port . "/$endpoint";
   my $retval=undef;
 
   my %form;
@@ -549,7 +572,7 @@ sub get {
   } elsif ($response->code() eq "401") {
     print "Vanligen ange pwd.\n";
   } elsif ($retries < 5) {
-    get($ip,$port,$pwd,$endpoint,$retries+1,$client_name);
+    get($ip,$port,$pwd,$endpoint,$retries+1,$client_name,$use_tls);
   } else {
     warn $response->status_line()."\n";
   }

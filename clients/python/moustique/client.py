@@ -47,19 +47,21 @@ def decode_rot13_base64(encoded: str) -> str:
 class Moustique:
     def __init__(self, ip: str, port: str, client_name: str,
                  username: Optional[str] = None, password: Optional[str] = None,
-                 timeout: int = 5, use_mqtt: bool = False, mqtt_port: int = 1883):
+                 timeout: int = 5, use_mqtt: bool = False, mqtt_port: int = 1883,
+                 use_tls: bool = False):
         """
         Initialize Moustique client
 
         Args:
             ip: Server IP address
-            port: Server port (HTTP)
+            port: Server port (HTTP/HTTPS)
             client_name: Unique client identifier
             username: Username for authentication (optional if public access enabled)
             password: Password for authentication (optional if public access enabled)
             timeout: Request timeout in seconds
             use_mqtt: Use MQTT protocol instead of HTTP polling (requires paho-mqtt)
             mqtt_port: MQTT server port (default: 1883)
+            use_tls: Use HTTPS instead of HTTP (default: False)
         """
         self.ip = ip
         self.port = port
@@ -67,7 +69,8 @@ class Moustique:
         self.username = username
         self.password = password
         self.timeout = timeout
-        self.base_url = f"http://{ip}:{port}"
+        scheme = "https" if use_tls else "http"
+        self.base_url = f"{scheme}://{ip}:{port}"
         self.callbacks = {}
         self.session = requests.Session()  # Reuse connections
 
@@ -347,13 +350,18 @@ class Moustique:
 
 # Helper functions for server information
 
-def getversion(ip: str, port: str) -> str:
+def _get_scheme(use_tls: bool = False) -> str:
+    """Get URL scheme based on TLS setting"""
+    return "https" if use_tls else "http"
+
+def getversion(ip: str, port: str, use_tls: bool = False) -> str:
     """Get server version (no authentication required)"""
     try:
-        url = f"http://{ip}:{port}/VERSION"
+        scheme = _get_scheme(use_tls)
+        url = f"{scheme}://{ip}:{port}/VERSION"
         response = requests.get(url, timeout=5)
         response.raise_for_status()
-        
+
         if response.text:
             decoded = decode_rot13_base64(response.text)
             # Remove quotes if present
@@ -363,7 +371,8 @@ def getversion(ip: str, port: str) -> str:
         print(f"Failed to get version: {e}")
         return "unknown"
 
-def getstats(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> Dict:
+def getstats(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None,
+             use_tls: bool = False) -> Dict:
     """Get server statistics (requires authentication if not public)"""
     try:
         params = {}
@@ -372,15 +381,16 @@ def getstats(ip: str, port: str, username: Optional[str] = None, password: Optio
                 'username': encode_rot13_base64(username),
                 'password': encode_rot13_base64(password)
             }
-        
-        url = f"http://{ip}:{port}/STATS"
+
+        scheme = _get_scheme(use_tls)
+        url = f"{scheme}://{ip}:{port}/STATS"
         response = requests.post(url, data=params, timeout=5)
-        
+
         if response.status_code == 401:
             raise Exception("Authentication failed - username and password required")
-        
+
         response.raise_for_status()
-        
+
         if response.text:
             decoded = decode_rot13_base64(response.text)
             return json.loads(decoded)
@@ -389,7 +399,8 @@ def getstats(ip: str, port: str, username: Optional[str] = None, password: Optio
         print(f"Failed to get stats: {e}")
         return {}
 
-def getclients(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+def getclients(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None,
+               use_tls: bool = False) -> list:
     """Get active clients (requires authentication if not public)"""
     try:
         params = {}
@@ -398,15 +409,16 @@ def getclients(ip: str, port: str, username: Optional[str] = None, password: Opt
                 'username': encode_rot13_base64(username),
                 'password': encode_rot13_base64(password)
             }
-        
-        url = f"http://{ip}:{port}/CLIENTS"
+
+        scheme = _get_scheme(use_tls)
+        url = f"{scheme}://{ip}:{port}/CLIENTS"
         response = requests.post(url, data=params, timeout=5)
-        
+
         if response.status_code == 401:
             raise Exception("Authentication failed - username and password required")
-        
+
         response.raise_for_status()
-        
+
         if response.text:
             decoded = decode_rot13_base64(response.text)
             return json.loads(decoded)
@@ -415,7 +427,8 @@ def getclients(ip: str, port: str, username: Optional[str] = None, password: Opt
         print(f"Failed to get clients: {e}")
         return []
 
-def gettopics(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+def gettopics(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None,
+              use_tls: bool = False) -> list:
     """Get all topics (requires authentication if not public)"""
     try:
         params = {}
@@ -425,7 +438,8 @@ def gettopics(ip: str, port: str, username: Optional[str] = None, password: Opti
                 'password': encode_rot13_base64(password)
             }
 
-        url = f"http://{ip}:{port}/TOPICS"
+        scheme = _get_scheme(use_tls)
+        url = f"{scheme}://{ip}:{port}/TOPICS"
         response = requests.post(url, data=params, timeout=5)
 
         if response.status_code == 401:
@@ -441,7 +455,8 @@ def gettopics(ip: str, port: str, username: Optional[str] = None, password: Opti
         print(f"Failed to get topics: {e}")
         return []
 
-def getposters(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+def getposters(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None,
+               use_tls: bool = False) -> list:
     """Get all posters (requires authentication if not public)"""
     try:
         params = {}
@@ -451,7 +466,8 @@ def getposters(ip: str, port: str, username: Optional[str] = None, password: Opt
                 'password': encode_rot13_base64(password)
             }
 
-        url = f"http://{ip}:{port}/POSTERS"
+        scheme = _get_scheme(use_tls)
+        url = f"{scheme}://{ip}:{port}/POSTERS"
         response = requests.post(url, data=params, timeout=5)
 
         if response.status_code == 401:
@@ -467,7 +483,8 @@ def getposters(ip: str, port: str, username: Optional[str] = None, password: Opt
         print(f"Failed to get posters: {e}")
         return []
 
-def getpeerhosts(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+def getpeerhosts(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None,
+                 use_tls: bool = False) -> list:
     """Get all peer hosts (requires authentication if not public)"""
     try:
         params = {}
@@ -477,7 +494,8 @@ def getpeerhosts(ip: str, port: str, username: Optional[str] = None, password: O
                 'password': encode_rot13_base64(password)
             }
 
-        url = f"http://{ip}:{port}/PEERHOSTS"
+        scheme = _get_scheme(use_tls)
+        url = f"{scheme}://{ip}:{port}/PEERHOSTS"
         response = requests.post(url, data=params, timeout=5)
 
         if response.status_code == 401:
@@ -493,7 +511,8 @@ def getpeerhosts(ip: str, port: str, username: Optional[str] = None, password: O
         print(f"Failed to get peer hosts: {e}")
         return []
 
-def getcrooks(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None) -> list:
+def getcrooks(ip: str, port: str, username: Optional[str] = None, password: Optional[str] = None,
+              use_tls: bool = False) -> list:
     """Get all crooks/banned IPs (requires authentication if not public)"""
     try:
         params = {}
@@ -503,7 +522,8 @@ def getcrooks(ip: str, port: str, username: Optional[str] = None, password: Opti
                 'password': encode_rot13_base64(password)
             }
 
-        url = f"http://{ip}:{port}/CROOKS"
+        scheme = _get_scheme(use_tls)
+        url = f"{scheme}://{ip}:{port}/CROOKS"
         response = requests.post(url, data=params, timeout=5)
 
         if response.status_code == 401:

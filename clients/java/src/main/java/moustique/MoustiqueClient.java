@@ -69,17 +69,23 @@ public class MoustiqueClient {
     }
 
     public MoustiqueClient(String ip, String port, String clientName) {
-        this(ip, port, clientName, null, null, false, 1883);
+        this(ip, port, clientName, null, null, false, 1883, false);
     }
 
     public MoustiqueClient(String ip, String port, String clientName, String username, String password) {
-        this(ip, port, clientName, username, password, false, 1883);
+        this(ip, port, clientName, username, password, false, 1883, false);
     }
 
     public MoustiqueClient(String ip, String port, String clientName, String username, String password,
                           boolean useMqtt, int mqttPort) {
+        this(ip, port, clientName, username, password, useMqtt, mqttPort, false);
+    }
+
+    public MoustiqueClient(String ip, String port, String clientName, String username, String password,
+                          boolean useMqtt, int mqttPort, boolean useTls) {
         this.httpClient = HttpClient.newHttpClient();
-        this.baseUrl = "http://" + ip + ":" + port;
+        String scheme = useTls ? "https" : "http";
+        this.baseUrl = scheme + "://" + ip + ":" + port;
         this.ip = ip;
         this.clientName = clientName.isBlank()
                 ? "java-" + System.nanoTime()

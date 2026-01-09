@@ -12,10 +12,11 @@ try {
 
 class Moustique {
     constructor({ ip = '127.0.0.1', port = '33335', clientName = '', username = null, password = null,
-                  useMqtt = false, mqttPort = 1883 } = {}) {
+                  useMqtt = false, mqttPort = 1883, useTls = false } = {}) {
         this.ip = ip;
         this.port = port;
-        this.baseUrl = `http://${ip}:${port}`;
+        const scheme = useTls ? 'https' : 'http';
+        this.baseUrl = `${scheme}://${ip}:${port}`;
         this.clientName = clientName || `${this._getHostname()}-${Math.floor(Math.random() * 100)}-${Date.now()}`;
         this.username = username;
         this.password = password;

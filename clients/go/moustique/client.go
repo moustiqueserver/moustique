@@ -40,15 +40,17 @@ type message struct {
 }
 
 // New creates a new Moustique client
-// Usage: New(ip, port, clientName, username, password, useMqtt, mqttPort)
+// Usage: New(ip, port, clientName, username, password, useMqtt, mqttPort, useTLS)
 // All parameters after port are optional
 // useMqtt should be "true" to enable MQTT, mqttPort defaults to "1883"
+// useTLS should be "true" to use HTTPS instead of HTTP
 func New(ip, port string, args ...string) *Client {
 	clientName := "go-client"
 	username := ""
 	password := ""
 	useMqtt := false
 	mqttPort := 1883
+	useTLS := false
 
 	if len(args) > 0 && args[0] != "" {
 		clientName = args[0]
@@ -65,11 +67,19 @@ func New(ip, port string, args ...string) *Client {
 	if len(args) > 4 && args[4] != "" {
 		fmt.Sscanf(args[4], "%d", &mqttPort)
 	}
+	if len(args) > 5 && args[5] == "true" {
+		useTLS = true
+	}
 
 	clientName += "-" + uuid.New().String()[:8]
 
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+
 	client := &Client{
-		BaseURL:    fmt.Sprintf("http://%s:%s", ip, port),
+		BaseURL:    fmt.Sprintf("%s://%s:%s", scheme, ip, port),
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 		ClientName: clientName,
 		Username:   username,
