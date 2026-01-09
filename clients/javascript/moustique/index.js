@@ -235,6 +235,34 @@ class Moustique {
         return this.clientName;
     }
 
+    /**
+     * Set the client's "AboutMe" description.
+     * This description can be viewed in the admin panel and helps identify
+     * what this client does (e.g., "Cron job on server X that sends sensor data").
+     * @param {string} aboutMe - Description of what this client does
+     */
+    async setAboutMe(aboutMe) {
+        const url = `${this.baseUrl}/SET_ABOUT_ME`;
+        const payload = this._addAuth({
+            client: Moustique.enc(this.clientName),
+            about_me: Moustique.enc(aboutMe),
+            type: Moustique.enc('client')
+        });
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                body: new URLSearchParams(payload),
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+            if (!res.ok) {
+                console.error(`setAboutMe failed: ${res.status} ${await res.text()}`);
+            }
+        } catch (err) {
+            console.error('setAboutMe error:', err);
+        }
+    }
+
     // MQTT Support Methods
 
     _initMqtt() {

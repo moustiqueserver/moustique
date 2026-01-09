@@ -229,7 +229,24 @@ class Moustique:
     def get_client_name(self) -> str:
         """Get the client name"""
         return self.client_name
-    
+
+    def set_about_me(self, about_me: str) -> None:
+        """
+        Set the client's "AboutMe" description.
+
+        This description can be viewed in the admin panel and helps identify
+        what this client does (e.g., "Cron job on server X that sends sensor data").
+
+        Args:
+            about_me: Description of what this client does
+        """
+        params = {
+            'client': self.client_name,
+            'about_me': about_me,
+            'type': 'client'
+        }
+        self._make_request('SET_ABOUT_ME', params)
+
     def resubscribe(self) -> None:
         """Resubscribe to all topics"""
         for topic in list(self.callbacks.keys()):

@@ -284,6 +284,28 @@ func (c *Client) GetClientName() string {
 	return c.ClientName
 }
 
+// SetAboutMe sets the client's "AboutMe" description which can be viewed in the admin panel.
+// This helps identify what this client does (e.g., "Cron job on server X that sends sensor data").
+func (c *Client) SetAboutMe(aboutMe string) error {
+	payload := c.addAuth(url.Values{
+		"client":   {Enc(c.ClientName)},
+		"about_me": {Enc(aboutMe)},
+		"type":     {Enc("client")},
+	})
+
+	resp, err := c.HTTPClient.PostForm(c.BaseURL+"/SET_ABOUT_ME", payload)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("set_about_me failed: %d %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 // MQTT Support Methods
 
 func (c *Client) initMQTT() {

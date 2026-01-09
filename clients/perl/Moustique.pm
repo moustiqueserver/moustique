@@ -636,6 +636,28 @@ sub get_client_name {
   return $self->{name};
 }
 
+# Set the client's "AboutMe" description.
+# This description can be viewed in the admin panel and helps identify
+# what this client does (e.g., "Cron job on server X that sends sensor data").
+sub set_about_me {
+  my ($self, $about_me) = @_;
+  my $mua = $self->{ua};
+  my $scheme = $self->{use_tls} ? "https" : "http";
+  my $post_url = "$scheme://$self->{server_ip}:$self->{server_port}/SET_ABOUT_ME";
+
+  my $form = $self->add_auth({
+    client => enc($self->{name}),
+    about_me => enc($about_me),
+    type => enc("client")
+  });
+
+  my $response = $mua->post($post_url, $form);
+  unless ($response->is_success) {
+    warn "set_about_me failed: " . $response->code . " " . $response->status_line;
+  }
+  return $response->is_success;
+}
+
 sub enc {
  my ($plaintext) = @_;
  my $encoded;

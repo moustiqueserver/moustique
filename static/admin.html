@@ -464,6 +464,124 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             border-radius: 10px;
         }
+
+        /* Detail Modal */
+        .detail-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .detail-modal.active {
+            display: flex;
+        }
+
+        .detail-modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .detail-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .detail-modal-header h2 {
+            color: #56ab2f;
+            margin: 0;
+            word-break: break-all;
+        }
+
+        .detail-modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+            padding: 5px 10px;
+        }
+
+        .detail-modal-close:hover {
+            color: #333;
+        }
+
+        .detail-section {
+            margin-bottom: 20px;
+        }
+
+        .detail-section h3 {
+            color: #56ab2f;
+            margin-bottom: 10px;
+            font-size: 1em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .detail-row {
+            display: flex;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .detail-label {
+            font-weight: 500;
+            color: #666;
+            width: 140px;
+            flex-shrink: 0;
+        }
+
+        .detail-value {
+            color: #333;
+            word-break: break-all;
+        }
+
+        .detail-tag {
+            display: inline-block;
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 0.85em;
+            margin: 2px;
+        }
+
+        .detail-tag.mqtt {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .detail-about-me {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            font-style: italic;
+            color: #555;
+        }
+
+        .list-item.clickable {
+            cursor: pointer;
+        }
+
+        .list-item.clickable:hover {
+            background: #e8f5e9;
+        }
     </style>
 </head>
 <body>
@@ -1109,29 +1227,30 @@
                     // Handle both old string format and new object format
                     if (typeof client === 'string') {
                         return `
-                            <div class="list-item">
+                            <div class="list-item clickable" onclick="showClientDetail('${escapeHtml(client)}'); document.getElementById('detail-modal-title').textContent = '${escapeHtml(client)}';">
                                 <div class="item-title">${escapeHtml(client)}</div>
                                 <div class="item-meta">Active subscriber</div>
                             </div>
                         `;
                     } else {
                         const metaParts = [];
+                        if (client.Type) {
+                            metaParts.push(client.Type === 'mqtt' ? 'MQTT' : 'HTTP');
+                        }
                         if (client.IP) {
                             metaParts.push(`IP: ${escapeHtml(client.IP)}`);
                         }
-                        if (client.FirstSeenNiceDatetime) {
-                            metaParts.push(`First seen: ${escapeHtml(client.FirstSeenNiceDatetime)}`);
-                        }
                         if (client.LatestPickupNiceDatetime) {
-                            metaParts.push(`Latest pickup: ${escapeHtml(client.LatestPickupNiceDatetime)}`);
+                            metaParts.push(`Last: ${escapeHtml(client.LatestPickupNiceDatetime)}`);
                         }
                         if (client.RequestCounter) {
-                            metaParts.push(`Requests: ${client.RequestCounter}`);
+                            metaParts.push(`Reqs: ${client.RequestCounter}`);
                         }
                         const metaText = metaParts.length > 0 ? metaParts.join(' • ') : 'Active subscriber';
+                        const clientNameEscaped = escapeHtml(client.Name).replace(/'/g, "\\'");
 
                         return `
-                            <div class="list-item">
+                            <div class="list-item clickable" onclick="showClientDetail('${clientNameEscaped}'); document.getElementById('detail-modal-title').textContent = '${clientNameEscaped}';">
                                 <div class="item-title">${escapeHtml(client.Name)}</div>
                                 <div class="item-meta">${metaText}</div>
                             </div>
@@ -1178,7 +1297,7 @@
                     // Handle both old string format and new object format
                     if (typeof poster === 'string') {
                         return `
-                            <div class="list-item">
+                            <div class="list-item clickable" onclick="showProviderDetail('${escapeHtml(poster)}'); document.getElementById('detail-modal-title').textContent = '${escapeHtml(poster)}';">
                                 <div class="item-title">${escapeHtml(poster)}</div>
                                 <div class="item-meta">Message publisher</div>
                             </div>
@@ -1188,19 +1307,17 @@
                         if (poster.IP) {
                             metaParts.push(`IP: ${escapeHtml(poster.IP)}`);
                         }
-                        if (poster.FirstSeenNiceDatetime) {
-                            metaParts.push(`First seen: ${escapeHtml(poster.FirstSeenNiceDatetime)}`);
-                        }
                         if (poster.LatestPostNiceDatetime) {
-                            metaParts.push(`Latest post: ${escapeHtml(poster.LatestPostNiceDatetime)}`);
+                            metaParts.push(`Last: ${escapeHtml(poster.LatestPostNiceDatetime)}`);
                         }
                         if (poster.MessageCount) {
-                            metaParts.push(`Messages: ${poster.MessageCount}`);
+                            metaParts.push(`Msgs: ${poster.MessageCount}`);
                         }
                         const metaText = metaParts.length > 0 ? metaParts.join(' • ') : 'Message publisher';
+                        const posterNameEscaped = escapeHtml(poster.Name).replace(/'/g, "\\'");
 
                         return `
-                            <div class="list-item">
+                            <div class="list-item clickable" onclick="showProviderDetail('${posterNameEscaped}'); document.getElementById('detail-modal-title').textContent = '${posterNameEscaped}';">
                                 <div class="item-title">${escapeHtml(poster.Name)}</div>
                                 <div class="item-meta">${metaText}</div>
                             </div>
@@ -1479,6 +1596,214 @@
             document.getElementById('payment-status').innerHTML = '';
             currentInvoice = null;
         }
+
+        // Client/Provider Detail Modal Functions
+        async function showClientDetail(clientName) {
+            const modal = document.getElementById('detail-modal');
+            const content = document.getElementById('detail-modal-body');
+            content.innerHTML = '<div class="loading">Loading client details...</div>';
+            modal.classList.add('active');
+
+            try {
+                const params = new URLSearchParams();
+                params.append('username', encodeParam(username));
+                params.append('password', encodeParam(password));
+                params.append('client', encodeParam(clientName));
+
+                const response = await fetch(`${API_BASE}/CLIENT_DETAIL`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: params.toString()
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load client details');
+                }
+
+                const encoded = await response.text();
+                const decoded = decodeParam(encoded);
+                const detail = JSON.parse(decoded);
+
+                content.innerHTML = renderClientDetail(detail);
+            } catch (error) {
+                content.innerHTML = `<div class="error">Failed to load client details: ${escapeHtml(error.message)}</div>`;
+            }
+        }
+
+        async function showProviderDetail(providerName) {
+            const modal = document.getElementById('detail-modal');
+            const content = document.getElementById('detail-modal-body');
+            content.innerHTML = '<div class="loading">Loading provider details...</div>';
+            modal.classList.add('active');
+
+            try {
+                const params = new URLSearchParams();
+                params.append('username', encodeParam(username));
+                params.append('password', encodeParam(password));
+                params.append('provider', encodeParam(providerName));
+
+                const response = await fetch(`${API_BASE}/PROVIDER_DETAIL`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: params.toString()
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load provider details');
+                }
+
+                const encoded = await response.text();
+                const decoded = decodeParam(encoded);
+                const detail = JSON.parse(decoded);
+
+                content.innerHTML = renderProviderDetail(detail);
+            } catch (error) {
+                content.innerHTML = `<div class="error">Failed to load provider details: ${escapeHtml(error.message)}</div>`;
+            }
+        }
+
+        function renderClientDetail(detail) {
+            const typeTag = detail.Type === 'mqtt'
+                ? '<span class="detail-tag mqtt">MQTT</span>'
+                : '<span class="detail-tag">HTTP</span>';
+
+            let subscriptionsHtml = '';
+            if (detail.Subscriptions && detail.Subscriptions.length > 0) {
+                subscriptionsHtml = detail.Subscriptions.map(t =>
+                    `<span class="detail-tag">${escapeHtml(t)}</span>`
+                ).join('');
+            } else {
+                subscriptionsHtml = '<span style="color: #999;">No subscriptions</span>';
+            }
+
+            let aboutMeHtml = '';
+            if (detail.AboutMe) {
+                aboutMeHtml = `
+                    <div class="detail-section">
+                        <h3>About</h3>
+                        <div class="detail-about-me">${escapeHtml(detail.AboutMe)}</div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="detail-section">
+                    <h3>Connection Info</h3>
+                    <div class="detail-row">
+                        <span class="detail-label">Type:</span>
+                        <span class="detail-value">${typeTag}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">IP Address:</span>
+                        <span class="detail-value">${escapeHtml(detail.IP || 'Unknown')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">First Seen:</span>
+                        <span class="detail-value">${escapeHtml(detail.FirstSeenNiceDatetime || 'Unknown')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Latest Pickup:</span>
+                        <span class="detail-value">${escapeHtml(detail.LatestPickupNiceDatetime || 'Unknown')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Requests:</span>
+                        <span class="detail-value">${detail.RequestCounter || 0}</span>
+                    </div>
+                </div>
+                <div class="detail-section">
+                    <h3>Subscriptions (${detail.Subscriptions ? detail.Subscriptions.length : 0})</h3>
+                    <div>${subscriptionsHtml}</div>
+                </div>
+                <div class="detail-section">
+                    <h3>Message Queue</h3>
+                    <div class="detail-row">
+                        <span class="detail-label">Pending:</span>
+                        <span class="detail-value">${detail.PendingMessages || 0} messages</span>
+                    </div>
+                </div>
+                ${aboutMeHtml}
+            `;
+        }
+
+        function renderProviderDetail(detail) {
+            let topicsHtml = '';
+            if (detail.Topics && detail.Topics.length > 0) {
+                topicsHtml = detail.Topics.map(t =>
+                    `<span class="detail-tag">${escapeHtml(t)}</span>`
+                ).join('');
+            } else {
+                topicsHtml = '<span style="color: #999;">No topics</span>';
+            }
+
+            let aboutMeHtml = '';
+            if (detail.AboutMe) {
+                aboutMeHtml = `
+                    <div class="detail-section">
+                        <h3>About</h3>
+                        <div class="detail-about-me">${escapeHtml(detail.AboutMe)}</div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="detail-section">
+                    <h3>Provider Info</h3>
+                    <div class="detail-row">
+                        <span class="detail-label">IP Address:</span>
+                        <span class="detail-value">${escapeHtml(detail.IP || 'Unknown')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">First Seen:</span>
+                        <span class="detail-value">${escapeHtml(detail.FirstSeenNiceDatetime || 'Unknown')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Latest Post:</span>
+                        <span class="detail-value">${escapeHtml(detail.LatestPostNiceDatetime || 'Unknown')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Messages:</span>
+                        <span class="detail-value">${detail.MessageCount || 0}</span>
+                    </div>
+                </div>
+                <div class="detail-section">
+                    <h3>Topics Posted To (${detail.Topics ? detail.Topics.length : 0})</h3>
+                    <div>${topicsHtml}</div>
+                </div>
+                ${aboutMeHtml}
+            `;
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detail-modal').classList.remove('active');
+        }
+
+        // Close modal on click outside
+        document.addEventListener('click', function(e) {
+            const modal = document.getElementById('detail-modal');
+            if (e.target === modal) {
+                closeDetailModal();
+            }
+        });
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeDetailModal();
+            }
+        });
     </script>
+
+    <!-- Detail Modal -->
+    <div id="detail-modal" class="detail-modal">
+        <div class="detail-modal-content">
+            <div class="detail-modal-header">
+                <h2 id="detail-modal-title">Details</h2>
+                <button class="detail-modal-close" onclick="closeDetailModal()">&times;</button>
+            </div>
+            <div id="detail-modal-body">
+                <!-- Content loaded dynamically -->
+            </div>
+        </div>
+    </div>
 </body>
 </html>

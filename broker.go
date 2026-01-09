@@ -36,6 +36,7 @@ type Client struct {
 	IP                       string `json:"IP"`
 	Type                     string `json:"Type"` // "http" or "mqtt"
 	MQTTClientID             string `json:"MQTTClientID,omitempty"`
+	AboutMe                  string `json:"AboutMe,omitempty"` // Client's self-description
 }
 
 // Provider tracks message posters
@@ -49,6 +50,7 @@ type Provider struct {
 	LatestPostTime         int64               `json:"LatestPostTime"`
 	LatestPostNiceDatetime string              `json:"LatestPostNiceDatetime"`
 	MessageCount           int                 `json:"MessageCount"`
+	AboutMe                string              `json:"AboutMe,omitempty"` // Provider's self-description
 }
 
 // CrookInfo tracks bad actors making invalid requests
@@ -1018,6 +1020,113 @@ func (b *Broker) GetCrooks() []*CrookInfo {
 		crooks = append(crooks, crook)
 	}
 	return crooks
+}
+
+// ClientDetail contains detailed information about a client
+type ClientDetail struct {
+	*Client
+	Subscriptions    []string `json:"Subscriptions"`
+	PendingMessages  int      `json:"PendingMessages"`
+	QueuedTopics     []string `json:"QueuedTopics"`
+}
+
+// GetClientDetail returns detailed information about a specific client
+func (b *Broker) GetClientDetail(clientName string) *ClientDetail {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	client, exists := b.clients[clientName]
+	if !exists {
+		return nil
+	}
+
+	// Get subscriptions for this client
+	subscriptions := []string{}
+	for topic, clients := range b.subscriptions {
+		for _, name := range clients {
+			if name == clientName {
+				subscriptions = append(subscriptions, topic)
+				break
+			}
+		}
+	}
+
+	// Get pending message count and queued topics
+	pendingMessages := 0
+	queuedTopics := []string{}
+	if queue, exists := b.messageQueue[clientName]; exists {
+		for topic, msgs := range queue {
+			pendingMessages += len(msgs)
+			if len(msgs) > 0 {
+				queuedTopics = append(queuedTopics, topic)
+			}
+		}
+	}
+
+	return &ClientDetail{
+		Client:          client,
+		Subscriptions:   subscriptions,
+		PendingMessages: pendingMessages,
+		QueuedTopics:    queuedTopics,
+	}
+}
+
+// ProviderDetail contains detailed information about a provider/poster
+type ProviderDetail struct {
+	*Provider
+	Topics []string `json:"Topics"` // Topics this provider has posted to
+}
+
+// GetProviderDetail returns detailed information about a specific provider
+func (b *Broker) GetProviderDetail(providerName string) *ProviderDetail {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	provider, exists := b.providers[providerName]
+	if !exists {
+		return nil
+	}
+
+	// Get topics this provider has posted to
+	topics := []string{}
+	for topic := range provider.LatestPostsByTopic {
+		topics = append(topics, topic)
+	}
+
+	return &ProviderDetail{
+		Provider: provider,
+		Topics:   topics,
+	}
+}
+
+// SetClientAboutMe sets the about me text for a client
+func (b *Broker) SetClientAboutMe(clientName, aboutMe string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	client, exists := b.clients[clientName]
+	if !exists {
+		return fmt.Errorf("client not found: %s", clientName)
+	}
+
+	client.AboutMe = aboutMe
+	b.LogUser("Client %s set about me: %s", clientName, aboutMe)
+	return nil
+}
+
+// SetProviderAboutMe sets the about me text for a provider
+func (b *Broker) SetProviderAboutMe(providerName, aboutMe string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	provider, exists := b.providers[providerName]
+	if !exists {
+		return fmt.Errorf("provider not found: %s", providerName)
+	}
+
+	provider.AboutMe = aboutMe
+	b.LogUser("Provider %s set about me: %s", providerName, aboutMe)
+	return nil
 }
 
 func formatNiceDateTime(timestamp int64) string {

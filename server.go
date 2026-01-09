@@ -1111,6 +1111,12 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 		s.handleTopics(conn, params, broker)
 	case "CROOKS":
 		s.handleCrooks(conn, params, broker)
+	case "CLIENT_DETAIL":
+		s.handleClientDetail(conn, params, broker)
+	case "PROVIDER_DETAIL":
+		s.handleProviderDetail(conn, params, broker)
+	case "SET_ABOUT_ME":
+		s.handleSetAboutMe(conn, params, broker)
 	case "BUY_CREDITS":
 		s.handleBuyCredits(conn, params, username)
 	case "CHECK_INVOICE":
@@ -1437,6 +1443,72 @@ func (s *Server) handleTopics(conn net.Conn, params map[string]string, broker *B
 func (s *Server) handleCrooks(conn net.Conn, params map[string]string, broker *Broker) {
 	crooks := broker.GetCrooks()
 	s.sendJSON(conn, crooks)
+}
+
+func (s *Server) handleClientDetail(conn net.Conn, params map[string]string, broker *Broker) {
+	clientName := params["client"]
+	if clientName == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	detail := broker.GetClientDetail(clientName)
+	if detail == nil {
+		s.sendNotFound(conn)
+		return
+	}
+
+	s.sendJSON(conn, detail)
+}
+
+func (s *Server) handleProviderDetail(conn net.Conn, params map[string]string, broker *Broker) {
+	providerName := params["provider"]
+	if providerName == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	detail := broker.GetProviderDetail(providerName)
+	if detail == nil {
+		s.sendNotFound(conn)
+		return
+	}
+
+	s.sendJSON(conn, detail)
+}
+
+func (s *Server) handleSetAboutMe(conn net.Conn, params map[string]string, broker *Broker) {
+	clientName := params["client"]
+	providerName := params["provider"]
+	aboutMe := params["about_me"]
+
+	if aboutMe == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	// Set for client if specified
+	if clientName != "" {
+		if err := broker.SetClientAboutMe(clientName, aboutMe); err != nil {
+			s.sendError(conn, err)
+			return
+		}
+	}
+
+	// Set for provider if specified
+	if providerName != "" {
+		if err := broker.SetProviderAboutMe(providerName, aboutMe); err != nil {
+			s.sendError(conn, err)
+			return
+		}
+	}
+
+	if clientName == "" && providerName == "" {
+		s.sendBadRequest(conn)
+		return
+	}
+
+	s.sendOK(conn)
 }
 
 func (s *Server) handleLog(conn net.Conn, params map[string]string, broker *Broker) {

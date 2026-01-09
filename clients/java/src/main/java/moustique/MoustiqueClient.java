@@ -301,6 +301,33 @@ public class MoustiqueClient {
         return clientName;
     }
 
+    /**
+     * Set the client's "AboutMe" description.
+     * This description can be viewed in the admin panel and helps identify
+     * what this client does (e.g., "Cron job on server X that sends sensor data").
+     *
+     * @param aboutMe Description of what this client does
+     * @return CompletableFuture that completes when the request is done
+     */
+    public CompletableFuture<Void> setAboutMe(String aboutMe) {
+        Map<String, String> payload = addAuth(Map.of(
+                "client", Utils.enc(clientName),
+                "about_me", Utils.enc(aboutMe),
+                "type", Utils.enc("client")
+        ));
+
+        return sendPost("/SET_ABOUT_ME", payload)
+                .thenAccept(res -> {
+                    if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                        System.err.println("setAboutMe failed: HTTP " + res.statusCode() + " " + res.body());
+                    }
+                })
+                .exceptionally(ex -> {
+                    System.err.println("setAboutMe error: " + ex.getMessage());
+                    return null;
+                });
+    }
+
     // MQTT Support Methods
 
     private void initMqtt() {
