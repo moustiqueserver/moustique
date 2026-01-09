@@ -722,9 +722,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Check peer authorization
+	// Get connection IP (for peer authorization)
 	remoteAddr := conn.RemoteAddr().String()
-	host, _, err := net.SplitHostPort(remoteAddr)
+	connHost, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
 		if s.debug {
 			s.logger.Printf("Failed to parse remote address: %v", err)
@@ -732,10 +732,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 		return
 	}
 
-	if !s.security.IsPeerAllowed(host) {
+	if !s.security.IsPeerAllowed(connHost) {
 		s.sendUnauthorized(conn, "Peer not allowed")
 		if s.debug {
-			s.logger.Printf("Unauthorized request from %s", host)
+			s.logger.Printf("Unauthorized request from %s", connHost)
 		}
 		return
 	}
@@ -750,8 +750,39 @@ func (s *Server) handleConnection(conn net.Conn) {
 		return
 	}
 
+	// Determine client IP (check proxy headers if connection is from localhost)
+	clientIP := s.getClientIP(req, connHost)
+
 	// Handle request
-	s.handleRequest(conn, req, host)
+	s.handleRequest(conn, req, clientIP)
+}
+
+// getClientIP extracts the real client IP from proxy headers if the connection
+// is from a trusted proxy (localhost), otherwise returns the connection IP.
+func (s *Server) getClientIP(req *http.Request, connHost string) string {
+	// Only trust proxy headers from localhost (nginx)
+	if connHost == "127.0.0.1" || connHost == "::1" || connHost == "localhost" {
+		// Check X-Real-IP first (preferred, set by nginx)
+		if xri := req.Header.Get("X-Real-IP"); xri != "" {
+			// Validate it looks like an IP
+			if ip := net.ParseIP(xri); ip != nil {
+				return xri
+			}
+		}
+
+		// Check X-Forwarded-For (may contain multiple IPs, use first)
+		if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
+			// X-Forwarded-For can be "client, proxy1, proxy2" - take the first
+			if comma := strings.Index(xff, ","); comma > 0 {
+				xff = strings.TrimSpace(xff[:comma])
+			}
+			if ip := net.ParseIP(xff); ip != nil {
+				return xff
+			}
+		}
+	}
+
+	return connHost
 }
 
 func (s *Server) readRequest(conn net.Conn) (*http.Request, error) {
