@@ -63,9 +63,12 @@ type Client struct {
 }
 
 type message struct {
-	Topic   string `json:"topic"`
-	Message string `json:"message"`
-	From    string `json:"from"`
+	Topic               string `json:"topic"`
+	Message             string `json:"message"`
+	From                string `json:"from"`
+	UpdatedTime         string `json:"UpdatedTime"`
+	UpdatedNiceDatetime string `json:"UpdatedNiceDateTime"`
+	IP                  string `json:"IP"`
 }
 
 // NewClient creates a new Moustique client
@@ -306,7 +309,12 @@ func main() {
 			os.Exit(1)
 		}*/
 
-		fmt.Printf("Topic: %s, Message: %s", mess.Topic, mess.Message)
+		if *verbose {
+			jsonBytes, _ := json.MarshalIndent(mess, "", "  ")
+			fmt.Println(string(jsonBytes))
+		} else {
+			fmt.Printf("Topic: %s, Message: %s\n", mess.Topic, mess.Message)
+		}
 
 	case "put", "putval":
 		if *topic == "" || *message == "" {
