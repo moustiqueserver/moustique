@@ -1756,7 +1756,7 @@
                         <div class="message-content">${escapeHtml(messageContent) || '<em>Empty message</em>'}</div>
                         <div class="meta-row">
                             ${data.from ? `<span><strong>From:</strong> ${escapeHtml(data.from)}</span>` : ''}
-                            ${data.timestamp ? `<span><strong>Time:</strong> ${escapeHtml(data.timestamp)}</span>` : ''}
+                            ${data.updated_nicedatetime ? `<span><strong>Time:</strong> ${escapeHtml(data.updated_nicedatetime)}</span>` : ''}
                         </div>
                     </div>
                 `;
