@@ -492,6 +492,15 @@ func (b *Broker) GetValue(key string) (*Message, error) {
 	return &msg, nil
 }
 
+// GetKeys retrieves all topics/keys as []string
+func (b *Broker) GetKeysByRegex() []string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	keys := b.db.GetKeys()
+	return keys
+}
+
 // GetValuesByRegex retrieves values matching a regex pattern
 func (b *Broker) GetValuesByRegex(pattern string) (map[string]*Message, error) {
 	b.mu.RLock()
@@ -894,14 +903,14 @@ func (b *Broker) shouldBanForReason(reason string) bool {
 
 // crookEventInfo holds info about crook events for deferred publishing
 type crookEventInfo struct {
-	isNew      bool
-	isBanned   bool
-	ip         string
-	reason     string
-	firstSeen  string
-	bannedAt   string
-	attempts   int
-	timestamp  int64
+	isNew     bool
+	isBanned  bool
+	ip        string
+	reason    string
+	firstSeen string
+	bannedAt  string
+	attempts  int
+	timestamp int64
 }
 
 // RecordInvalidRequest records an invalid request from an IP and bans if needed
@@ -1025,9 +1034,9 @@ func (b *Broker) GetCrooks() []*CrookInfo {
 // ClientDetail contains detailed information about a client
 type ClientDetail struct {
 	*Client
-	Subscriptions    []string `json:"Subscriptions"`
-	PendingMessages  int      `json:"PendingMessages"`
-	QueuedTopics     []string `json:"QueuedTopics"`
+	Subscriptions   []string `json:"Subscriptions"`
+	PendingMessages int      `json:"PendingMessages"`
+	QueuedTopics    []string `json:"QueuedTopics"`
 }
 
 // GetClientDetail returns detailed information about a specific client

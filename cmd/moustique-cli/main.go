@@ -62,7 +62,7 @@ type Client struct {
 	callbacks  map[string][]func(topic, message, from string)
 }
 
-type message struct {
+type Message struct {
 	Topic               string          `json:"topic"`
 	Message             string          `json:"message"`
 	From                string          `json:"from"`
@@ -150,7 +150,7 @@ func (c *Client) PutVal(topic, value string) error {
 	return nil
 }
 
-func (c *Client) GetVal(topic string) *message {
+func (c *Client) GetVal(topic string) *Message {
 	payload := c.addAuth(url.Values{
 		"topic":  {encode(topic)},
 		"client": {encode(c.ClientName)},
@@ -175,9 +175,9 @@ func (c *Client) GetVal(topic string) *message {
 		return nil //, nil
 	}
 
-	// Parse JSON: map[string]message
-	//var data map[string]message
-	var msg *message
+	// Parse JSON: map[string]Message
+	//var data map[string]Message
+	var msg *Message
 	if err := json.Unmarshal([]byte(decrypted), &msg); err != nil {
 		return nil //, nil
 	}
@@ -206,6 +206,141 @@ func (c *Client) Subscribe(topic string, callback func(topic, message, from stri
 	return nil
 }
 
+func (c *Client) GetKeys(verbose bool) ([]string, error) {
+	payload := c.addAuth(url.Values{
+		"client": {encode(c.ClientName)},
+	})
+
+	if verbose {
+		fmt.Printf("Fetching topics from %s/TOPICS\n", c.BaseURL)
+	}
+
+	resp, err := c.HTTPClient.PostForm(c.BaseURL+"/TOPICS", payload)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if verbose {
+		fmt.Printf("Response status: %s\n", resp.Status)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server returned %s: %s", resp.Status, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	if verbose {
+		fmt.Printf("Response body length: %d bytes\n", len(body))
+	}
+
+	decrypted := decode(string(body))
+	if verbose {
+		fmt.Printf("Decrypted length: %d bytes\n", len(decrypted))
+	}
+
+	if decrypted == "" {
+		return nil, nil
+	}
+	// Parse JSON: []string (topic names)
+	var data []string
+	if err := json.Unmarshal([]byte(decrypted), &data); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %v", err)
+	}
+	if verbose {
+		fmt.Printf("Found %d topics\n", len(data))
+	}
+	return data, nil
+}
+func (c *Client) GetValsByRegex(pattern string, verbose bool) (map[string]Message, error) {
+	payload := c.addAuth(url.Values{
+		"topic":  {encode(pattern)},
+		"client": {encode(c.ClientName)},
+	})
+
+	if verbose {
+		fmt.Printf("Sending pattern: %s (encoded: %s)\n", pattern, encode(pattern))
+	}
+
+	resp, err := c.HTTPClient.PostForm(c.BaseURL+"/GETVALSBYREGEX", payload)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if verbose {
+		fmt.Printf("Response status: %s\n", resp.Status)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server returned %s: %s", resp.Status, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	if verbose {
+		fmt.Printf("Response body length: %d bytes\n", len(body))
+		if len(body) < 500 {
+			fmt.Printf("Raw body: %s\n", string(body))
+		}
+	}
+
+	decrypted := decode(string(body))
+	if verbose {
+		fmt.Printf("Decrypted length: %d bytes\n", len(decrypted))
+		if len(decrypted) < 500 {
+			fmt.Printf("Decrypted: %s\n", decrypted)
+		}
+	}
+
+	if decrypted == "" {
+		return nil, nil
+	}
+
+	// Parse JSON: map[string]Message
+	var data map[string]Message
+	if err := json.Unmarshal([]byte(decrypted), &data); err != nil {
+		preview := decrypted
+		if len(preview) > 200 {
+			preview = preview[:200]
+		}
+		return nil, fmt.Errorf("failed to parse response (first 200 chars: %s): %v", preview, err)
+	}
+	return data, nil
+}
+
+// isPrintable checks if a string contains only printable ASCII characters
+func isPrintable(s string) bool {
+	for _, c := range s {
+		if c < 32 || c > 126 {
+			return false
+		}
+	}
+	return true
+}
+
+// sqlLikeToRegex converts SQL LIKE pattern to regex
+// % -> .* (any characters)
+// _ -> .  (single character)
+func sqlLikeToRegex(pattern string) string {
+	// Escape regex special characters except % and _
+	result := ""
+	for _, c := range pattern {
+		switch c {
+		case '%':
+			result += ".*"
+		case '_':
+			result += "."
+		case '.', '+', '*', '?', '^', '$', '(', ')', '[', ']', '{', '}', '|', '\\':
+			result += "\\" + string(c)
+		default:
+			result += string(c)
+		}
+	}
+	return result
+}
+
 func (c *Client) Pickup() error {
 	payload := c.addAuth(url.Values{
 		"client": {encode(c.ClientName)},
@@ -223,8 +358,8 @@ func (c *Client) Pickup() error {
 		return nil
 	}
 
-	// Parse JSON: map[string][]message
-	var data map[string][]message
+	// Parse JSON: map[string][]Message
+	var data map[string][]Message
 	if err := json.Unmarshal([]byte(decrypted), &data); err != nil {
 		return nil
 	}
@@ -264,7 +399,7 @@ func (c *Client) Pickup() error {
 
 func main() {
 	// Define flags
-	action := flag.String("a", "", "Action: pub, sub, get, put, stats, clients, topics, version")
+	action := flag.String("a", "", "Action: pub, sub, get, put, like, version")
 	host := flag.String("h", "localhost", "Moustique server host")
 	port := flag.String("p", "33334", "Moustique server port")
 	topic := flag.String("t", "", "Topic")
@@ -317,6 +452,53 @@ func main() {
 			fmt.Printf("%s: %s\n", mess.Topic, mess.Message)
 		}
 
+	case "like", "getvalsbyregex":
+		if *topic == "" {
+			fmt.Println("Error: -t (pattern) is required for like")
+			fmt.Println("Use SQL LIKE syntax: % for any characters, _ for single character")
+			fmt.Println("Example: moustique-cli -a like -t %outside/temper%")
+			os.Exit(1)
+		}
+
+		// Convert SQL LIKE pattern to regex
+		regexPattern := sqlLikeToRegex(*topic)
+		if *verbose {
+			fmt.Printf("Pattern: %s -> Regex: %s\n", *topic, regexPattern)
+		}
+
+		msgs, err := client.GetValsByRegex(regexPattern, *verbose)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Filter out corrupted entries
+		validMsgs := make(map[string]Message)
+		for topic, msg := range msgs {
+			if len(topic) > 0 && topic[0] == '/' && isPrintable(topic) {
+				validMsgs[topic] = msg
+			}
+		}
+
+		if *verbose {
+			fmt.Printf("Filtered: %d valid entries out of %d total\n", len(validMsgs), len(msgs))
+		}
+
+		if len(validMsgs) == 0 {
+			fmt.Println("No matches found")
+			os.Exit(0)
+		}
+
+		if *verbose {
+			jsonBytes, _ := json.MarshalIndent(validMsgs, "", "  ")
+			fmt.Println(string(jsonBytes))
+		} else {
+			// Simple output format
+			for topic, msg := range validMsgs {
+				fmt.Printf("%s: %s\n", topic, msg.Message)
+			}
+		}
+
 	case "put", "putval":
 		if *topic == "" || *message == "" {
 			fmt.Println("Error: -t (topic) and -m (message) are required for putval")
@@ -356,6 +538,25 @@ func main() {
 			time.Sleep(1 * time.Second)
 		}
 
+	case "topics", "keys":
+		keys, err := client.GetKeys(*verbose)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		// Filter out corrupted keys (those not starting with / or containing non-printable chars)
+		validKeys := make([]string, 0)
+		for _, key := range keys {
+			if len(key) > 0 && key[0] == '/' && isPrintable(key) {
+				validKeys = append(validKeys, key)
+			}
+		}
+		if *verbose {
+			fmt.Printf("Filtered: %d valid topics out of %d total\n", len(validKeys), len(keys))
+		}
+		jsonBytes, _ := json.MarshalIndent(validKeys, "", "  ")
+		fmt.Println(string(jsonBytes))
+
 	case "version":
 		fmt.Printf("moustique-cli version %s\n", version)
 
@@ -375,6 +576,8 @@ func printHelp() {
 	fmt.Println("Actions:")
 	fmt.Println("  pub, publish   Publish a message to a topic")
 	fmt.Println("  put, putval    Store a key-value pair")
+	fmt.Println("  get, getval    Get a stored value")
+	fmt.Println("  like           Search values using SQL LIKE syntax (% = any, _ = single char)")
 	fmt.Println("  sub, subscribe Subscribe to a topic and listen for messages")
 	fmt.Println("  version        Show version information")
 	fmt.Println()
@@ -382,37 +585,33 @@ func printHelp() {
 	fmt.Println("  -a string      Action to perform (required)")
 	fmt.Println("  -h string      Moustique server host (default: localhost)")
 	fmt.Println("  -p string      Moustique server port (default: 33334)")
-	fmt.Println("  -t string      Topic")
+	fmt.Println("  -t string      Topic or pattern (for like)")
 	fmt.Println("  -m string      Message")
 	fmt.Println("  -n string      Client name (auto-generated if not provided)")
 	fmt.Println("  -u string      Username for authentication (optional)")
 	fmt.Println("  -pwd string    Password for authentication (optional)")
 	fmt.Println("  -s             Use HTTPS/TLS (secure mode)")
-	fmt.Println("  -v             Verbose output")
+	fmt.Println("  -v             Verbose output (shows full JSON for like)")
 	fmt.Println("  -help          Show this help message")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  # Publish to public broker")
+	fmt.Println("  # Publish a message")
 	fmt.Println("  moustique-cli -a pub -t /test/topic -m \"Hello World\"")
 	fmt.Println()
-	fmt.Println("  # Publish with authentication")
-	fmt.Println("  moustique-cli -a pub -u alice -pwd secret123 -t /test/topic -m \"Hello\"")
+	fmt.Println("  # Get a stored value")
+	fmt.Println("  moustique-cli -a get -t /mushroom/sensors/temperature")
+	fmt.Println()
+	fmt.Println("  # Search values with SQL LIKE pattern")
+	fmt.Println("  moustique-cli -a like -t %btc_price%")
+	fmt.Println("  moustique-cli -a like -t /mushroom/sensors/%")
+	fmt.Println("  moustique-cli -a like -t %temperature% -v    # verbose output")
 	fmt.Println()
 	fmt.Println("  # Subscribe to topic")
 	fmt.Println("  moustique-cli -a sub -t /test/topic")
 	fmt.Println()
-	fmt.Println("  # Subscribe with authentication")
-	fmt.Println("  moustique-cli -a sub -u alice -pwd secret123 -t /private/topic")
-	fmt.Println()
 	fmt.Println("  # Put a value")
 	fmt.Println("  moustique-cli -a put -t /config/setting -m \"value123\"")
 	fmt.Println()
-	fmt.Println("  # Get a value")
-	fmt.Println("  moustique-cli -a get -t /config/setting -u alice -pwd secret123")
-	fmt.Println()
 	fmt.Println("  # Connect to remote server")
-	fmt.Println("  moustique-cli -h moustique.host -p 33334 -a pub -t /remote/topic -m \"Hi\"")
-	fmt.Println()
-	fmt.Println("  # Connect with TLS/HTTPS (secure mode)")
-	fmt.Println("  moustique-cli -s -h moustique.host -p 33335 -a pub -t /test/topic -m \"Hello\"")
+	fmt.Println("  moustique-cli -h 192.168.1.79 -p 33334 -a like -t %sensor%")
 }
