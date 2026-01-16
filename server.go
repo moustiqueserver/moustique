@@ -1892,6 +1892,8 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 	var totalRequestsLastMinute int64
 	var totalMessagesLastMinute int64
 	activeBrokers := 0
+	now := time.Now().Unix()
+	var minElapsedTime int64 = 60 // Start with max, find minimum elapsed time across brokers
 
 	// Include public broker if it exists
 	if s.brokerManager.defaultBroker != nil {
@@ -1913,6 +1915,14 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 		totalMessages += broker.messagesProcessed
 		totalRequestsLastMinute += broker.minuteRequestCount
 		totalMessagesLastMinute += broker.minuteMessageCount
+
+		// Track elapsed time for accurate per-second calculation
+		if broker.minuteRequestCountTimestamp > 0 {
+			elapsed := now - broker.minuteRequestCountTimestamp
+			if elapsed > 0 && elapsed < minElapsedTime {
+				minElapsedTime = elapsed
+			}
+		}
 
 		if broker.requestCount > 0 {
 			activeBrokers++
@@ -1953,6 +1963,14 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 			totalRequestsLastMinute += broker.minuteRequestCount
 			totalMessagesLastMinute += broker.minuteMessageCount
 
+			// Track elapsed time for accurate per-second calculation
+			if broker.minuteRequestCountTimestamp > 0 {
+				elapsed := now - broker.minuteRequestCountTimestamp
+				if elapsed > 0 && elapsed < minElapsedTime {
+					minElapsedTime = elapsed
+				}
+			}
+
 			if broker.requestCount > 0 {
 				activeBrokers++
 			}
@@ -1963,9 +1981,12 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 		users = append(users, userInfo)
 	}
 
-	// Calculate actual per-second rates for the last minute
-	requestsPerSecond := float64(totalRequestsLastMinute) / 60.0
-	messagesPerSecond := float64(totalMessagesLastMinute) / 60.0
+	// Calculate actual per-second rates using actual elapsed time (not fixed 60s)
+	if minElapsedTime == 0 {
+		minElapsedTime = 1 // Avoid division by zero
+	}
+	requestsPerSecond := float64(totalRequestsLastMinute) / float64(minElapsedTime)
+	messagesPerSecond := float64(totalMessagesLastMinute) / float64(minElapsedTime)
 
 	response := map[string]interface{}{
 		"users":               users,
@@ -1977,6 +1998,7 @@ func (s *Server) handleAdminListUsers(conn net.Conn, params map[string]string) {
 		"requests_per_second": requestsPerSecond,
 		"messages_per_second": messagesPerSecond,
 		"active_brokers":      activeBrokers,
+		"elapsed_seconds":     minElapsedTime, // Time window used for per-second calculation
 	}
 
 	s.sendJSON(conn, response)
