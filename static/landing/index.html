@@ -571,6 +571,7 @@
                 <button class="code-tab" onclick="showTab('python')">Python</button>
                 <button class="code-tab" onclick="showTab('javascript')">JavaScript</button>
                 <button class="code-tab" onclick="showTab('go')">Go</button>
+                <button class="code-tab" onclick="showTab('php')">PHP</button>
                 <button class="code-tab" onclick="showTab('cli')">HTTP/CLI</button>
             </div>
 
@@ -668,6 +669,32 @@ go get github.com/moustiqueserver/moustique/clients/go/moustique
         client.<span class="code-function">Pickup</span>()
         time.<span class="code-function">Sleep</span>(time.Second)
     }
+}</pre>
+            </div>
+
+            <div id="php" class="code-content">
+<pre><span class="code-comment">// Include the client (or use Composer)</span>
+<span class="code-keyword">require_once</span> <span class="code-string">'Moustique.php'</span>;
+
+<span class="code-comment">// Create client</span>
+<span class="code-keyword">$client</span> = <span class="code-keyword">new</span> <span class="code-function">Moustique</span>([
+    <span class="code-string">'ip'</span>       => <span class="code-string">'localhost'</span>,
+    <span class="code-string">'port'</span>     => <span class="code-string">'33334'</span>,
+    <span class="code-string">'username'</span> => <span class="code-string">'demo'</span>,
+    <span class="code-string">'password'</span> => <span class="code-string">'demo123'</span>,
+]);
+<span class="code-comment">// Or use cloud: 'ip' => 'cloud.moustique.xyz', 'port' => '80'</span>
+
+<span class="code-keyword">$client</span>-><span class="code-function">publish</span>(<span class="code-string">'/sensors/temperature'</span>, <span class="code-string">'23.5'</span>);
+
+<span class="code-comment">// Subscribe to messages</span>
+<span class="code-keyword">$client</span>-><span class="code-function">subscribe</span>(<span class="code-string">'/sensors/#'</span>, <span class="code-keyword">function</span> (<span class="code-keyword">$topic</span>, <span class="code-keyword">$msg</span>, <span class="code-keyword">$from</span>) {
+    <span class="code-function">echo</span> <span class="code-string">"Got: $msg\n"</span>;
+});
+
+<span class="code-keyword">while</span> (<span class="code-keyword">true</span>) {
+    <span class="code-keyword">$client</span>-><span class="code-function">pickup</span>();  <span class="code-comment">// Poll for messages</span>
+    <span class="code-function">sleep</span>(<span class="code-string">1</span>);
 }</pre>
             </div>
 

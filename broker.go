@@ -835,6 +835,26 @@ func (b *Broker) clearOldPosters() {
 	}
 }
 
+func (b *Broker) clearOldSystemEvents() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	cutoff := time.Now().Unix() - int64((10 * time.Minute).Seconds())
+	for topic, messages := range b.systemMessageQueue {
+		var keep []*Message
+		for _, msg := range messages {
+			if msg.UpdatedTime > cutoff {
+				keep = append(keep, msg)
+			}
+		}
+		if len(keep) == 0 {
+			delete(b.systemMessageQueue, topic)
+		} else {
+			b.systemMessageQueue[topic] = keep
+		}
+	}
+}
+
 // GetClients returns list of client information
 func (b *Broker) GetClients() []*Client {
 	b.mu.RLock()
