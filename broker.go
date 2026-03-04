@@ -746,6 +746,7 @@ func (b *Broker) StartMaintenance(ctx context.Context) {
 				}
 				b.kickInactiveClients()
 				b.clearOldPosters()
+				b.clearOldSystemEvents()
 			}
 		}
 	}
