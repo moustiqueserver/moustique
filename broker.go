@@ -82,6 +82,8 @@ type Broker struct {
 	clients                     map[string]*Client
 	providers                   map[string]*Provider
 	crooks                      map[string]*CrookInfo
+	subnetBannedIPs             map[string]map[string]int64 // /24 subnet -> ip -> banned_at timestamp
+	bannedSubnets               map[string]bool             // subnets already banned via fail2ban
 	topicExplosionCache         map[string][]string
 	messageCount                int64
 	minuteMessageCount          int64
@@ -122,6 +124,8 @@ func NewBroker(logger *log.Logger, db *Database, debug bool, fail2banJail string
 		clients:             make(map[string]*Client),
 		providers:           make(map[string]*Provider),
 		crooks:              make(map[string]*CrookInfo),
+		subnetBannedIPs:     make(map[string]map[string]int64),
+		bannedSubnets:       make(map[string]bool),
 		topicExplosionCache: make(map[string][]string),
 		messageQueueTimeout: 5 * time.Minute,
 		posterStatsTimeout:  1 * time.Hour,
@@ -897,6 +901,16 @@ func (b *Broker) GetTopics() []string {
 	return b.db.GetKeys()
 }
 
+// extractSubnet24 returns the /24 subnet string for an IPv4 address (e.g. "1.2.3.4" → "1.2.3.0/24").
+// Returns "" for non-IPv4 addresses.
+func extractSubnet24(ip string) string {
+	parts := strings.Split(ip, ".")
+	if len(parts) != 4 {
+		return ""
+	}
+	return parts[0] + "." + parts[1] + "." + parts[2] + ".0/24"
+}
+
 // shouldBanForReason determines if an IP should be banned based on fail2ban level and reason
 func (b *Broker) shouldBanForReason(reason string) bool {
 	if b.fail2banJail == "" {
@@ -924,14 +938,17 @@ func (b *Broker) shouldBanForReason(reason string) bool {
 
 // crookEventInfo holds info about crook events for deferred publishing
 type crookEventInfo struct {
-	isNew     bool
-	isBanned  bool
-	ip        string
-	reason    string
-	firstSeen string
-	bannedAt  string
-	attempts  int
-	timestamp int64
+	isNew        bool
+	isBanned     bool
+	ip           string
+	reason       string
+	firstSeen    string
+	bannedAt     string
+	attempts     int
+	timestamp    int64
+	subnetBanned bool
+	subnet       string
+	subnetCount  int
 }
 
 // RecordInvalidRequest records an invalid request from an IP and bans if needed
@@ -983,7 +1000,7 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 		crook.BannedAt = now
 		crook.BannedAtNiceDatetime = formatNiceDateTime(now)
 
-		b.logger.Printf("Banning IP %s after %d invalid attempts (reason: %s, level: %s)", ip, crook.Attempts, reason, b.fail2banLevel)
+		b.logger.Printf("[IP ban] Banning IP %s after %d invalid attempts (reason: %s, level: %s)", ip, crook.Attempts, reason, b.fail2banLevel)
 		b.LogUser("Banned IP: %s (attempts: %d, reason: %s)", ip, crook.Attempts, reason)
 
 		eventInfo.isBanned = true
@@ -1000,6 +1017,39 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 				b.logger.Printf("Warning: Failed to ban IP %s via fail2ban jail %s: %v", ip, jail, err)
 			}
 		}(b.fail2banJail)
+
+		// Check if the /24 subnet should also be banned
+		if subnet := extractSubnet24(ip); subnet != "" && !b.bannedSubnets[subnet] {
+			cutoff := now - 24*60*60
+			if b.subnetBannedIPs[subnet] == nil {
+				b.subnetBannedIPs[subnet] = make(map[string]int64)
+			}
+			b.subnetBannedIPs[subnet][ip] = now
+
+			count := 0
+			for _, ts := range b.subnetBannedIPs[subnet] {
+				if ts > cutoff {
+					count++
+				}
+			}
+
+			if count >= 2 {
+				b.bannedSubnets[subnet] = true
+				b.logger.Printf("[Subnet ban] Banning subnet %s — %d unique IPs from this subnet banned in last 24h, latest: %s (reason: %s)", subnet, count, ip, reason)
+				b.LogUser("Banned subnet: %s (%d unique IPs banned in last 24h, latest: %s)", subnet, count, ip)
+
+				eventInfo.subnetBanned = true
+				eventInfo.subnet = subnet
+				eventInfo.subnetCount = count
+
+				go func(jail, sn string) {
+					cmd := exec.Command("sudo", "fail2ban-client", "set", jail, "banip", sn)
+					if err := cmd.Run(); err != nil {
+						b.logger.Printf("Warning: Failed to ban subnet %s via fail2ban jail %s: %v", sn, jail, err)
+					}
+				}(b.fail2banJail, subnet)
+			}
+		}
 	}
 
 	brokerUsername = b.brokerUsername
@@ -1035,6 +1085,20 @@ func (b *Broker) RecordInvalidRequest(ip string, reason string) {
 				"attempts":  eventInfo.attempts,
 				"banned_at": eventInfo.bannedAt,
 				"timestamp": eventInfo.timestamp,
+			}))
+		}
+	}
+
+	if eventInfo.subnetBanned {
+		if systemEventsBroker != nil && systemEventsBroker != b {
+			systemEventsBroker.PublishEvent("/system/event/subnet/banned", formatJSON(map[string]interface{}{
+				"broker":       brokerUsername,
+				"subnet":       eventInfo.subnet,
+				"trigger_ip":   eventInfo.ip,
+				"subnet_count": eventInfo.subnetCount,
+				"reason":       eventInfo.reason,
+				"banned_at":    eventInfo.bannedAt,
+				"timestamp":    eventInfo.timestamp,
 			}))
 		}
 	}
