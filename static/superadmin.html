@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Moustique - System Admin</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -36,6 +37,14 @@
         .subtitle {
             color: #666;
             font-size: 1.1em;
+        }
+
+        .version-tag {
+            font-size: 0.42em;
+            color: #aaa;
+            font-weight: 400;
+            vertical-align: middle;
+            margin-left: 8px;
         }
 
         .card {
@@ -425,7 +434,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>🦟 Moustique System Admin</h1>
+            <h1>🦟 Moustique System Admin <span class="version-tag">v{{VERSION}}</span></h1>
             <p class="subtitle">Multi-tenant Server Management</p>
         </header>
 

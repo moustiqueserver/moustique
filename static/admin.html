@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Moustique - Admin</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <style>
         * {
             margin: 0;
@@ -154,6 +155,14 @@
         .subtitle {
             color: #666;
             font-size: 1.1em;
+        }
+
+        .version-tag {
+            font-size: 0.42em;
+            color: #aaa;
+            font-weight: 400;
+            vertical-align: middle;
+            margin-left: 8px;
         }
 
         .logout-btn {
@@ -665,7 +674,7 @@
             <div class="header-left">
                 <img src="moustique_logo.png" alt="Moustique">
                 <div>
-                    <h1>Moustique</h1>
+                    <h1>Moustique <span class="version-tag">v{{VERSION}}</span></h1>
                     <p class="subtitle">User: <span id="current-user">-</span> <span class="live-indicator"></span></p>
                 </div>
             </div>

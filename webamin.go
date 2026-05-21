@@ -35,7 +35,7 @@ var robotsTxt string
 var moustiqueBrowserJS string
 
 func (s *Server) ServeWebAdmin(conn net.Conn) {
-	s.sendHTML(conn, adminHTML)
+	s.sendHTML(conn, strings.Replace(adminHTML, "{{VERSION}}", s.version, 1))
 }
 
 func (s *Server) ServeSignup(conn net.Conn) {
@@ -43,7 +43,7 @@ func (s *Server) ServeSignup(conn net.Conn) {
 }
 
 func (s *Server) ServeSuperAdmin(conn net.Conn) {
-	s.sendHTML(conn, superadminHTML)
+	s.sendHTML(conn, strings.Replace(superadminHTML, "{{VERSION}}", s.version, 1))
 }
 
 func (s *Server) ServeFavicon(conn net.Conn) {

@@ -20,7 +20,7 @@ const (
 	DefaultTimeout = 5 * time.Second
 )
 
-var version = "1.0.1"
+var version = "2.0.1"
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "Path to config file")
