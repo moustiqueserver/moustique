@@ -58,8 +58,32 @@ func runTest(protocol, ip, port, username, password, mqttPort string) bool {
 	}
 	time.Sleep(500 * time.Millisecond)
 
-	// 3. Subscribe and receive
-	fmt.Printf("3. Subscribing to /test/topic/go...\n")
+	// 3. Get value (full struct)
+	fmt.Println("3. Getting value (full)...")
+	result, err := client.GetVal("/test/value/go")
+	if err != nil {
+		fmt.Printf("   Error: %v\n", err)
+		return false
+	}
+	expected := fmt.Sprintf("go-%s-v1", protocol)
+	if result.Message != expected {
+		fmt.Printf("   GetVal mismatch: got %q, want %q\n", result.Message, expected)
+		return false
+	}
+	fmt.Printf("   GetVal OK: message=%q from=%q updated=%s\n", result.Message, result.From, result.UpdatedNiceDateTime)
+
+	// GetValString convenience method
+	fmt.Println("   Getting value (string only)...")
+	strVal, err := client.GetValString("/test/value/go")
+	if err != nil {
+		fmt.Printf("   Error: %v\n", err)
+		return false
+	}
+	fmt.Printf("   GetValString OK: %q\n", strVal)
+	time.Sleep(500 * time.Millisecond)
+
+	// 4. Subscribe and receive
+	fmt.Printf("4. Subscribing to /test/topic/go...\n")
 	if err := client.Subscribe("/test/topic/go", messageCallback); err != nil {
 		fmt.Printf("   Error: %v\n", err)
 		return false

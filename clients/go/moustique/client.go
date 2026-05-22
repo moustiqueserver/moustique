@@ -39,6 +39,23 @@ type message struct {
 	From    string `json:"from"`
 }
 
+// ValResult holds the full response from a GetVal call.
+type ValResult struct {
+	Topic               string
+	Message             string
+	From                string
+	UpdatedTime         int64
+	UpdatedNiceDateTime string
+}
+
+type valResponse struct {
+	Topic               string `json:"topic"`
+	Message             string `json:"message"`
+	From                string `json:"from"`
+	UpdatedTime         int64  `json:"updated_time"`
+	UpdatedNiceDateTime string `json:"updated_nicedatetime"`
+}
+
 // New creates a new Moustique client
 // Usage: New(ip, port, clientName, username, password, useMqtt, mqttPort, useTLS)
 // All parameters after port are optional
@@ -150,6 +167,51 @@ func (c *Client) PutVal(topic, value string) error {
 	}
 	fmt.Printf("PutVal %s = %s\n", topic, value)
 	return nil
+}
+
+func (c *Client) GetVal(topic string) (*ValResult, error) {
+	payload := c.addAuth(url.Values{
+		"topic":  {Enc(topic)},
+		"client": {Enc(c.ClientName)},
+	})
+
+	resp, err := c.HTTPClient.PostForm(c.BaseURL+"/GETVAL", payload)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("not found: %s", topic)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("getval failed: %d %s", resp.StatusCode, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	decoded := Dec(string(body))
+
+	var v valResponse
+	if err := json.Unmarshal([]byte(decoded), &v); err != nil {
+		return nil, fmt.Errorf("getval decode failed: %w", err)
+	}
+	return &ValResult{
+		Topic:               v.Topic,
+		Message:             v.Message,
+		From:                v.From,
+		UpdatedTime:         v.UpdatedTime,
+		UpdatedNiceDateTime: v.UpdatedNiceDateTime,
+	}, nil
+}
+
+// GetValString returns only the message value from a stored key.
+func (c *Client) GetValString(topic string) (string, error) {
+	result, err := c.GetVal(topic)
+	if err != nil {
+		return "", err
+	}
+	return result.Message, nil
 }
 
 func (c *Client) Subscribe(topic string, callback func(topic, message, from string)) error {
