@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -28,6 +29,13 @@ var signupHTML string
 //go:embed static/moustique_logo.png
 var logoPNG []byte
 
+// logoPNGDataURI is the logo pre-encoded as a base64 data URI, computed once at startup.
+var logoPNGDataURI string
+
+func init() {
+	logoPNGDataURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(logoPNG)
+}
+
 //go:embed static/robots.txt
 var robotsTxt string
 
@@ -35,7 +43,9 @@ var robotsTxt string
 var moustiqueBrowserJS string
 
 func (s *Server) ServeWebAdmin(conn net.Conn) {
-	s.sendHTML(conn, strings.Replace(adminHTML, "{{VERSION}}", s.version, 1))
+	html := strings.ReplaceAll(adminHTML, "{{LOGO_DATA_URI}}", logoPNGDataURI)
+	html = strings.Replace(html, "{{VERSION}}", s.version, 1)
+	s.sendHTML(conn, html)
 }
 
 func (s *Server) ServeSignup(conn net.Conn) {
