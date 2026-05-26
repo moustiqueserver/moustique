@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const version = "1.0.0"
+const version = "1.0.1"
 
 // Encoding functions (ROT13 + Base64)
 func rot13(s string) string {
@@ -341,6 +341,33 @@ func sqlLikeToRegex(pattern string) string {
 	return result
 }
 
+func (c *Client) Delete(topic string) (int, error) {
+	payload := c.addAuth(url.Values{
+		"topic": {encode(topic)},
+	})
+
+	resp, err := c.HTTPClient.PostForm(c.BaseURL+"/DELETE", payload)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("delete failed: %d %s", resp.StatusCode, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	decrypted := decode(string(body))
+
+	var result struct {
+		Deleted int `json:"deleted"`
+	}
+	if err := json.Unmarshal([]byte(decrypted), &result); err != nil {
+		return 0, fmt.Errorf("failed to parse response: %v", err)
+	}
+	return result.Deleted, nil
+}
+
 func (c *Client) Pickup() error {
 	payload := c.addAuth(url.Values{
 		"client": {encode(c.ClientName)},
@@ -399,7 +426,7 @@ func (c *Client) Pickup() error {
 
 func main() {
 	// Define flags
-	action := flag.String("a", "", "Action: pub, sub, get, put, like, version")
+	action := flag.String("a", "", "Action: pub, sub, get, put, like, del, version")
 	host := flag.String("h", "localhost", "Moustique server host")
 	port := flag.String("p", "33334", "Moustique server port")
 	topic := flag.String("t", "", "Topic")
@@ -538,6 +565,24 @@ func main() {
 			time.Sleep(1 * time.Second)
 		}
 
+	case "del", "delete":
+		if *topic == "" {
+			fmt.Println("Error: -t (topic) is required for delete")
+			os.Exit(1)
+		}
+		count, err := client.Delete(*topic)
+		if err != nil {
+			fmt.Printf("Error deleting: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Deleted %d entr", count)
+		if count == 1 {
+			fmt.Printf("y")
+		} else {
+			fmt.Printf("ies")
+		}
+		fmt.Printf(" matching %s\n", *topic)
+
 	case "topics", "keys":
 		keys, err := client.GetKeys(*verbose)
 		if err != nil {
@@ -578,6 +623,7 @@ func printHelp() {
 	fmt.Println("  put, putval    Store a key-value pair")
 	fmt.Println("  get, getval    Get a stored value")
 	fmt.Println("  like           Search values using SQL LIKE syntax (% = any, _ = single char)")
+	fmt.Println("  del, delete    Delete a topic and all its subtopics from DB and memory")
 	fmt.Println("  sub, subscribe Subscribe to a topic and listen for messages")
 	fmt.Println("  version        Show version information")
 	fmt.Println()
@@ -611,6 +657,9 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("  # Put a value")
 	fmt.Println("  moustique-cli -a put -t /config/setting -m \"value123\"")
+	fmt.Println()
+	fmt.Println("  # Delete a topic and all subtopics")
+	fmt.Println("  moustique-cli -a del -t /old/topic")
 	fmt.Println()
 	fmt.Println("  # Connect to remote server")
 	fmt.Println("  moustique-cli -h 192.168.1.79 -p 33334 -a like -t %sensor%")
