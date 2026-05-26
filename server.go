@@ -1097,6 +1097,8 @@ func (s *Server) handleRequest(conn net.Conn, req *http.Request, peerHost string
 		s.handleGetVal(conn, params, broker)
 	case "GETVALSBYREGEX":
 		s.handleGetValsByRegex(conn, params, broker)
+	case "DELETE":
+		s.handleDeleteVal(conn, params, broker)
 	case "STATUS":
 		s.handleStatus(conn, params, broker)
 	case "STATS":
@@ -1358,6 +1360,22 @@ func (s *Server) handleGetValsByRegex(conn net.Conn, params map[string]string, b
 	}
 
 	s.sendJSON(conn, values)
+}
+
+func (s *Server) handleDeleteVal(conn net.Conn, params map[string]string, broker *Broker) {
+	topic := params["topic"]
+	if topic == "" {
+		s.sendNotFound(conn)
+		return
+	}
+
+	count, err := broker.DeleteValue(topic)
+	if err != nil {
+		s.sendError(conn, err)
+		return
+	}
+
+	s.sendJSON(conn, map[string]int{"deleted": count})
 }
 
 func (s *Server) handleVersion(conn net.Conn, versionType string) {

@@ -554,6 +554,29 @@ func (b *Broker) PutValue(valname, val, message, from string, updatedTime int64)
 	return b.db.SaveValue(valname, msg)
 }
 
+// DeleteValue removes all stored values whose key equals topic or starts with topic + "/".
+// Also purges any matching topics from in-flight message queues.
+// Returns the number of deleted database entries.
+func (b *Broker) DeleteValue(topic string) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Delete from database (in-memory map + SQLite)
+	count := b.db.DeleteByPrefix(topic)
+
+	// Purge matching topics from all client message queues
+	childPrefix := topic + "/"
+	for clientName, topicMap := range b.messageQueue {
+		for t := range topicMap {
+			if t == topic || strings.HasPrefix(t, childPrefix) {
+				delete(b.messageQueue[clientName], t)
+			}
+		}
+	}
+
+	return count, nil
+}
+
 // GetStats returns broker statistics
 func (b *Broker) GetStats() map[string]interface{} {
 	b.mu.RLock()

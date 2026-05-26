@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -185,6 +186,29 @@ func (d *Database) GetKeysByRegex(re *regexp.Regexp) []string {
 		}
 	}
 	return matches
+}
+
+// DeleteByPrefix deletes all keys equal to prefix or starting with prefix + "/".
+// Removes entries from both the in-memory map and SQLite.
+// Returns the number of deleted keys.
+func (d *Database) DeleteByPrefix(prefix string) int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var toDelete []string
+	childPrefix := prefix + "/"
+	for key := range d.values {
+		if key == prefix || strings.HasPrefix(key, childPrefix) {
+			toDelete = append(toDelete, key)
+		}
+	}
+
+	for _, key := range toDelete {
+		delete(d.values, key)
+		d.db.Exec("DELETE FROM kv WHERE key = ?", key) //nolint:errcheck
+	}
+
+	return len(toDelete)
 }
 
 // Close closes the database connection
