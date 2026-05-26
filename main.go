@@ -120,7 +120,7 @@ func main() {
 		logger,
 		dataDir,
 		*debug,
-		fileVersion,
+		fmt.Sprintf("%s (%s)", version, fileVersion),
 		allowPublic,
 		config.Security.AllowedPeers,
 		config.Server.MaxRequestSize,
