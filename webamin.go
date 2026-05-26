@@ -53,7 +53,9 @@ func (s *Server) ServeSignup(conn net.Conn) {
 }
 
 func (s *Server) ServeSuperAdmin(conn net.Conn) {
-	s.sendHTML(conn, strings.Replace(superadminHTML, "{{VERSION}}", s.version, 1))
+	html := strings.ReplaceAll(superadminHTML, "{{LOGO_DATA_URI}}", logoPNGDataURI)
+	html = strings.Replace(html, "{{VERSION}}", s.version, 1)
+	s.sendHTML(conn, html)
 }
 
 func (s *Server) ServeFavicon(conn net.Conn) {

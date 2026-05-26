@@ -26,6 +26,15 @@
             border-radius: 15px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.1);
             margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        header img {
+            width: 60px;
+            height: auto;
+            flex-shrink: 0;
         }
 
         h1 {
@@ -434,8 +443,11 @@
 <body>
     <div class="container">
         <header>
-            <h1>🦟 Moustique System Admin <span class="version-tag">v{{VERSION}}</span></h1>
-            <p class="subtitle">Multi-tenant Server Management</p>
+            <img src="{{LOGO_DATA_URI}}" alt="Moustique">
+            <div>
+                <h1>Moustique System Admin <span class="version-tag">v{{VERSION}}</span></h1>
+                <p class="subtitle">Multi-tenant Server Management</p>
+            </div>
         </header>
 
         <div class="stats-grid">
