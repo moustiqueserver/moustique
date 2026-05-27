@@ -285,6 +285,65 @@
             overflow-y: auto;
         }
 
+        /* ── Topics tree ── */
+        .topics-toolbar { display:flex; gap:8px; margin-bottom:15px; align-items:center; flex-wrap:wrap; }
+        .topic-tree-wrap { max-height:620px; overflow-y:auto; }
+        .topic-list { list-style:none; padding:0; margin:0; }
+        .topic-node { padding:1px 0; }
+        .topic-row {
+            display:flex; align-items:center; padding:4px 8px;
+            border-radius:6px; gap:6px; cursor:pointer;
+            transition:background 0.12s; min-height:30px;
+        }
+        .topic-row:hover { background:#f0f7e8; }
+        .topic-toggle {
+            font-size:0.6em; color:#bbb; width:10px;
+            flex-shrink:0; text-align:center; cursor:pointer;
+        }
+        .topic-name {
+            flex:1; font-size:0.9em; font-family:'Courier New',monospace;
+            color:#333; min-width:0; white-space:nowrap;
+            overflow:hidden; text-overflow:ellipsis;
+        }
+        .topic-val {
+            color:#999; font-size:0.82em; max-width:260px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+            font-family:'Courier New',monospace; flex-shrink:0;
+        }
+        .topic-actions { display:flex; gap:3px; opacity:0; transition:opacity 0.12s; flex-shrink:0; }
+        .topic-row:hover .topic-actions { opacity:1; }
+        .topic-children {
+            padding-left:18px; border-left:2px solid #e4f0d8; margin-left:12px;
+        }
+        .topic-children.collapsed { display:none; }
+        .tbtn {
+            font-size:0.75em; padding:2px 7px; border-radius:4px;
+            border:1px solid transparent; cursor:pointer; transition:opacity 0.12s;
+        }
+        .tbtn:hover { opacity:0.75; }
+        .tbtn-del  { background:#ffe4e4; color:#c0392b; border-color:#f5c0c0; }
+        .tbtn-put  { background:#dff0ff; color:#2471a3; border-color:#aed6f1; }
+        .tbtn-pub  { background:#e8f8e8; color:#1e8449; border-color:#a9dfb0; }
+        .tbtn-plain{ background:#f4f4f4; color:#555;    border-color:#ddd; }
+        .topic-editor {
+            background:#f8faf6; border:1px solid #d5e8c8;
+            border-radius:8px; padding:10px 14px;
+            margin:4px 0 4px 22px; font-size:0.88em;
+        }
+        .topic-editor-label { color:#555; margin-bottom:7px; }
+        .topic-editor-label code {
+            background:#eaf4e0; padding:1px 5px; border-radius:3px;
+        }
+        .topic-editor-row { display:flex; gap:6px; align-items:center; }
+        .topic-editor-input {
+            flex:1; padding:6px 10px; border:1px solid #ccc;
+            border-radius:6px; font-size:0.95em; font-family:monospace; outline:none;
+        }
+        .topic-editor-input:focus {
+            border-color:#56ab2f; box-shadow:0 0 0 2px rgba(86,171,47,.15);
+        }
+        .topics-msg { margin-bottom:10px; display:none; }
+
         .list-item {
             padding: 15px;
             border-bottom: 1px solid #eee;
@@ -723,6 +782,7 @@
             <button class="tab" onclick="showTab('clients', event)">Clients</button>
             <button class="tab" onclick="showTab('posters', event)">Posters</button>
             <button class="tab" onclick="showTab('credits', event)">⚡ Credits</button>
+            <button class="tab" onclick="showTab('topics', event)">🗂️ Topics</button>
             <button class="tab" onclick="showTab('about', event)">About</button>
         </div>
 
@@ -787,6 +847,18 @@
             <button class="refresh-btn" onclick="loadPosters()">🔄 Refresh Posters</button>
             <div id="posters-list" class="item-list">
                 <div class="loading">Loading posters...</div>
+            </div>
+        </div>
+
+        <div id="topics-content" class="content-box">
+            <div class="topics-toolbar">
+                <button class="refresh-btn" onclick="loadTopics()">🔄 Refresh</button>
+                <button class="refresh-btn" onclick="topicsExpandAll()">⊞ Expand all</button>
+                <button class="refresh-btn" onclick="topicsCollapseAll()">⊟ Collapse all</button>
+            </div>
+            <div id="topics-msg" class="topics-msg"></div>
+            <div id="topics-tree-wrap" class="topic-tree-wrap">
+                <div class="loading">Open this tab to load topics.</div>
             </div>
         </div>
 
@@ -973,6 +1045,7 @@
             if (tabName === 'clients') loadClients();
             if (tabName === 'posters') loadPosters();
             if (tabName === 'credits') loadCredits();
+            if (tabName === 'topics') loadTopics();
             // Don't auto-start pickup - only start after first subscription
             if (tabName !== 'subscribe') stopPickup();
         }
@@ -1388,6 +1461,270 @@
                 container.innerHTML = '<div class="error">Failed to load posters</div>';
             }
         }
+
+        // ======= Topics Tree =======
+        let topicsValues = {};   // path → {message, from, updated_time, ...}
+        let openTopicEditor = null;
+
+        async function loadTopics() {
+            const wrap = document.getElementById('topics-tree-wrap');
+            wrap.innerHTML = '<div class="loading">Loading…</div>';
+            closeTopicEditor();
+            try {
+                // 1. Fetch all keys
+                const kp = new URLSearchParams();
+                kp.append('username', encodeParam(username));
+                kp.append('password', encodeParam(password));
+                kp.append('client',   encodeParam('web-admin-topics'));
+                const kr = await fetch(`${API_BASE}/TOPICS`, {
+                    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:kp.toString()
+                });
+                const keys = JSON.parse(decodeParam(await kr.text())) || [];
+
+                // 2. Fetch all values (regex .* = everything)
+                const vp = new URLSearchParams();
+                vp.append('username', encodeParam(username));
+                vp.append('password', encodeParam(password));
+                vp.append('topic',    encodeParam('.*'));
+                const vr = await fetch(`${API_BASE}/GETVALSBYREGEX`, {
+                    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:vp.toString()
+                });
+                const rawVals = await vr.text();
+                topicsValues = rawVals ? (JSON.parse(decodeParam(rawVals)) || {}) : {};
+
+                if (!keys.length) {
+                    wrap.innerHTML = '<div class="loading">No topics stored yet.</div>';
+                    return;
+                }
+                const tree = buildTopicTree(keys);
+                wrap.innerHTML = '';
+                wrap.appendChild(renderTopicTree(tree));
+            } catch(e) {
+                wrap.innerHTML = `<div class="loading" style="color:#c0392b">Error: ${escapeHtml(String(e))}</div>`;
+            }
+        }
+
+        function buildTopicTree(paths) {
+            const root = {name:'', path:'', children:{}, hasVal:false};
+            for (const p of paths) {
+                if (!p || p[0] !== '/') continue;
+                const parts = p.split('/').filter(Boolean);
+                let node = root, cur = '';
+                for (let i = 0; i < parts.length; i++) {
+                    cur += '/' + parts[i];
+                    if (!node.children[parts[i]])
+                        node.children[parts[i]] = {name:parts[i], path:cur, children:{}, hasVal:false};
+                    if (i === parts.length - 1)
+                        node.children[parts[i]].hasVal = true;
+                    node = node.children[parts[i]];
+                }
+            }
+            return root;
+        }
+
+        function renderTopicTree(node) {
+            const ul = document.createElement('ul');
+            ul.className = 'topic-list';
+            const kids = Object.values(node.children).sort((a, b) => {
+                // folders first, then by name
+                const af = !!Object.keys(a.children).length;
+                const bf = !!Object.keys(b.children).length;
+                return af !== bf ? (bf ? 1 : -1) : a.name.localeCompare(b.name);
+            });
+            for (const child of kids) {
+                ul.appendChild(makeTopicNode(child));
+            }
+            return ul;
+        }
+
+        function makeTopicNode(node) {
+            const isFolder = !!Object.keys(node.children).length;
+            const li = document.createElement('li');
+            li.className = 'topic-node';
+
+            /* ── row ── */
+            const row = document.createElement('div');
+            row.className = 'topic-row';
+
+            // toggle arrow
+            const tog = document.createElement('span');
+            tog.className = 'topic-toggle';
+            tog.textContent = isFolder ? '▶' : '';
+            row.appendChild(tog);
+
+            // name + value
+            const nameEl = document.createElement('span');
+            nameEl.className = 'topic-name';
+            const icon = isFolder ? '📂' : '📄';
+            nameEl.textContent = icon + ' ' + node.name;
+            if (node.hasVal) {
+                const v = topicsValues[node.path];
+                if (v && v.message !== undefined) {
+                    const valSpan = document.createElement('span');
+                    valSpan.className = 'topic-val';
+                    valSpan.textContent = ' → ' + String(v.message).slice(0, 100);
+                    nameEl.appendChild(valSpan);
+                }
+            }
+            row.appendChild(nameEl);
+
+            // action buttons
+            const acts = document.createElement('span');
+            acts.className = 'topic-actions';
+            acts.appendChild(makeTopicBtn('🗑️', 'tbtn tbtn-del', isFolder ? 'Delete subtree' : 'Delete', () => topicDelete(node.path, isFolder)));
+            acts.appendChild(makeTopicBtn('✏️ Put', 'tbtn tbtn-put', 'Set stored value', () => topicOpenEditor(li, row, node.path, 'put')));
+            acts.appendChild(makeTopicBtn('📤 Pub', 'tbtn tbtn-pub', 'Publish message',   () => topicOpenEditor(li, row, node.path, 'pub')));
+            row.appendChild(acts);
+
+            // folder click → expand/collapse
+            if (isFolder) {
+                row.addEventListener('click', e => {
+                    if (e.target.closest('.topic-actions')) return;
+                    const childDiv = li.querySelector(':scope > .topic-children');
+                    if (!childDiv) return;
+                    const collapsed = childDiv.classList.toggle('collapsed');
+                    tog.textContent = collapsed ? '▶' : '▼';
+                });
+            }
+            li.appendChild(row);
+
+            // children
+            if (isFolder) {
+                const childDiv = document.createElement('div');
+                childDiv.className = 'topic-children collapsed';
+                childDiv.appendChild(renderTopicTree(node));
+                li.appendChild(childDiv);
+            }
+            return li;
+        }
+
+        function makeTopicBtn(label, cls, title, handler) {
+            const b = document.createElement('button');
+            b.className = cls; b.title = title; b.textContent = label;
+            b.addEventListener('click', e => { e.stopPropagation(); handler(); });
+            return b;
+        }
+
+        /* ── inline editor ── */
+        function topicOpenEditor(li, afterEl, path, mode) {
+            closeTopicEditor();
+            const ed = document.createElement('div');
+            ed.className = 'topic-editor';
+
+            const label = document.createElement('div');
+            label.className = 'topic-editor-label';
+            label.innerHTML = (mode === 'put' ? '✏️ Put value for ' : '📤 Publish to ') +
+                              `<code>${escapeHtml(path)}</code>`;
+            ed.appendChild(label);
+
+            const inputRow = document.createElement('div');
+            inputRow.className = 'topic-editor-row';
+
+            const inp = document.createElement('input');
+            inp.type = 'text';
+            inp.className = 'topic-editor-input';
+            inp.placeholder = mode === 'put' ? 'New value…' : 'Message…';
+            if (mode === 'put') {
+                const cur = topicsValues[path];
+                if (cur && cur.message !== undefined) inp.value = String(cur.message);
+            }
+
+            const saveBtn = document.createElement('button');
+            saveBtn.className = 'tbtn ' + (mode === 'put' ? 'tbtn-put' : 'tbtn-pub');
+            saveBtn.textContent = mode === 'put' ? 'Save' : 'Send';
+            saveBtn.addEventListener('click', () => mode === 'put' ? topicDoPut(path, inp.value) : topicDoPub(path, inp.value));
+
+            inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveBtn.click(); if (e.key === 'Escape') closeTopicEditor(); });
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'tbtn tbtn-plain';
+            cancelBtn.textContent = '✕';
+            cancelBtn.addEventListener('click', closeTopicEditor);
+
+            inputRow.appendChild(inp); inputRow.appendChild(saveBtn); inputRow.appendChild(cancelBtn);
+            ed.appendChild(inputRow);
+            afterEl.insertAdjacentElement('afterend', ed);
+            openTopicEditor = ed;
+            setTimeout(() => { inp.focus(); inp.select(); }, 30);
+        }
+
+        function closeTopicEditor() {
+            if (openTopicEditor) { openTopicEditor.remove(); openTopicEditor = null; }
+        }
+
+        /* ── API actions ── */
+        async function topicDelete(path, isFolder) {
+            const count = Object.keys(topicsValues).filter(k => k === path || k.startsWith(path + '/')).length;
+            const label = isFolder
+                ? `Delete "${path}" and all ${count} stored entr${count === 1 ? 'y' : 'ies'} underneath?`
+                : `Delete "${path}"?`;
+            if (!confirm(label)) return;
+            try {
+                const p = new URLSearchParams();
+                p.append('username', encodeParam(username));
+                p.append('password', encodeParam(password));
+                p.append('topic',    encodeParam(path));
+                const r = await fetch(`${API_BASE}/DELETE`, {
+                    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:p.toString()
+                });
+                const res = JSON.parse(decodeParam(await r.text()));
+                showTopicsMsg(`Deleted ${res.deleted} entr${res.deleted === 1 ? 'y' : 'ies'}`, true);
+                loadTopics();
+            } catch(e) { showTopicsMsg('Error: ' + e.message, false); }
+        }
+
+        async function topicDoPut(path, value) {
+            closeTopicEditor();
+            try {
+                const p = new URLSearchParams();
+                p.append('username', encodeParam(username));
+                p.append('password', encodeParam(password));
+                p.append('valname',  encodeParam(path));
+                p.append('val',      encodeParam(value));
+                p.append('from',     encodeParam('web-admin'));
+                await fetch(`${API_BASE}/PUTVAL`, {
+                    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:p.toString()
+                });
+                showTopicsMsg(`Saved value for ${path}`, true);
+                loadTopics();
+            } catch(e) { showTopicsMsg('Error: ' + e.message, false); }
+        }
+
+        async function topicDoPub(path, message) {
+            closeTopicEditor();
+            try {
+                const p = new URLSearchParams();
+                p.append('username', encodeParam(username));
+                p.append('password', encodeParam(password));
+                p.append('topic',    encodeParam(path));
+                p.append('message',  encodeParam(message));
+                p.append('from',     encodeParam('web-admin'));
+                await fetch(`${API_BASE}/POST`, {
+                    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:p.toString()
+                });
+                showTopicsMsg(`Published to ${path}`, true);
+            } catch(e) { showTopicsMsg('Error: ' + e.message, false); }
+        }
+
+        function showTopicsMsg(text, ok) {
+            const el = document.getElementById('topics-msg');
+            el.textContent = text;
+            el.className = 'topics-msg ' + (ok ? 'success-msg' : 'error-msg');
+            el.style.display = 'block';
+            clearTimeout(el._t);
+            el._t = setTimeout(() => { el.style.display = 'none'; }, 3500);
+        }
+
+        function topicsExpandAll() {
+            document.querySelectorAll('#topics-tree-wrap .topic-children').forEach(el => el.classList.remove('collapsed'));
+            document.querySelectorAll('#topics-tree-wrap .topic-toggle').forEach(el => { if (el.textContent) el.textContent = '▼'; });
+        }
+
+        function topicsCollapseAll() {
+            document.querySelectorAll('#topics-tree-wrap .topic-children').forEach(el => el.classList.add('collapsed'));
+            document.querySelectorAll('#topics-tree-wrap .topic-toggle').forEach(el => { if (el.textContent) el.textContent = '▶'; });
+        }
+        // ======= END Topics Tree =======
 
         window.onload = function() {
             // Check for "login as user" credentials from superadmin
