@@ -1216,6 +1216,37 @@ func (b *Broker) GetProviderDetail(providerName string) *ProviderDetail {
 	}
 }
 
+// TopicDetail holds live subscriber and poster info for a single topic.
+type TopicDetail struct {
+	Topic       string   `json:"topic"`
+	Subscribers []string `json:"subscribers"`
+	Posters     []string `json:"posters"`
+}
+
+// GetTopicDetail returns subscribers and active posters for the given topic.
+func (b *Broker) GetTopicDetail(topic string) *TopicDetail {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	subs := make([]string, 0)
+	for _, name := range b.subscriptions[topic] {
+		subs = append(subs, name)
+	}
+
+	posters := make([]string, 0)
+	for name, provider := range b.providers {
+		if _, ok := provider.LatestPostsByTopic[topic]; ok {
+			posters = append(posters, name)
+		}
+	}
+
+	return &TopicDetail{
+		Topic:       topic,
+		Subscribers: subs,
+		Posters:     posters,
+	}
+}
+
 // SetClientAboutMe sets the about me text for a client
 func (b *Broker) SetClientAboutMe(clientName, aboutMe string) error {
 	b.mu.Lock()

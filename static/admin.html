@@ -343,6 +343,23 @@
             border-color:#56ab2f; box-shadow:0 0 0 2px rgba(86,171,47,.15);
         }
         .topics-msg { margin-bottom:10px; display:none; }
+        .topic-name-link { cursor:pointer; }
+        .topic-name-link:hover { text-decoration:underline; text-decoration-style:dotted; text-decoration-color:#56ab2f; }
+        .topic-detail-panel {
+            background:#f4faf0; border:1px solid #c5e8b0;
+            border-radius:8px; padding:10px 14px;
+            margin:3px 0 3px 22px; font-size:0.85em;
+        }
+        .topic-detail-section { display:flex; align-items:baseline; gap:8px; margin-bottom:5px; flex-wrap:wrap; }
+        .topic-detail-label { color:#555; white-space:nowrap; font-weight:500; min-width:155px; }
+        .topic-detail-chips { display:flex; flex-wrap:wrap; gap:4px; }
+        .topic-chip {
+            padding:2px 9px; border-radius:12px;
+            font-size:0.88em; font-family:'Courier New',monospace;
+        }
+        .topic-chip-sub  { background:#dff0ff; color:#2471a3; }
+        .topic-chip-post { background:#fef9e7; color:#9a6f0a; }
+        .topic-detail-empty { color:#bbb; font-style:italic; }
 
         .list-item {
             padding: 15px;
@@ -776,13 +793,13 @@
         </div>
 
         <div class="tabs">
-            <button class="tab active" onclick="showTab('publish', event)">Publish</button>
+            <button class="tab active" onclick="showTab('topics', event)">🗂️ Topics</button>
+            <button class="tab" onclick="showTab('publish', event)">Publish</button>
             <button class="tab" onclick="showTab('subscribe', event)">Subscribe</button>
             <button class="tab" onclick="showTab('log', event)">Log</button>
             <button class="tab" onclick="showTab('clients', event)">Clients</button>
             <button class="tab" onclick="showTab('posters', event)">Posters</button>
             <button class="tab" onclick="showTab('credits', event)">⚡ Credits</button>
-            <button class="tab" onclick="showTab('topics', event)">🗂️ Topics</button>
             <button class="tab" onclick="showTab('about', event)">About</button>
         </div>
 
@@ -865,7 +882,7 @@
         <div id="about-content" class="content-box">
             <h2 style="margin-bottom: 20px;">About Moustique</h2>
             <p style="line-height: 1.6; margin-bottom: 15px;">
-                <strong>Moustique</strong> is a lightweight MQTT-style pub/sub broker that uses HTTP for communication.
+                <strong>Moustique</strong> is a lightweight MQTT-style pub/sub broker and key/value store that uses HTTP for communication.
             </p>
             <h3 style="margin: 20px 0 10px 0;">Key Features:</h3>
             <ul style="line-height: 2; margin-left: 20px;">
@@ -1465,11 +1482,13 @@
         // ======= Topics Tree =======
         let topicsValues = {};   // path → {message, from, updated_time, ...}
         let openTopicEditor = null;
+        let openTopicDetail = null;
 
         async function loadTopics() {
             const wrap = document.getElementById('topics-tree-wrap');
             wrap.innerHTML = '<div class="loading">Loading…</div>';
             closeTopicEditor();
+            closeTopicDetail();
             try {
                 // 1. Fetch all keys
                 const kp = new URLSearchParams();
@@ -1554,7 +1573,8 @@
 
             // name + value
             const nameEl = document.createElement('span');
-            nameEl.className = 'topic-name';
+            nameEl.className = 'topic-name topic-name-link';
+            nameEl.title = 'Click to see subscribers & posters';
             const icon = isFolder ? '📂' : '📄';
             nameEl.textContent = icon + ' ' + node.name;
             if (node.hasVal) {
@@ -1566,6 +1586,10 @@
                     nameEl.appendChild(valSpan);
                 }
             }
+            nameEl.addEventListener('click', e => {
+                e.stopPropagation();
+                topicShowDetail(li, row, node.path);
+            });
             row.appendChild(nameEl);
 
             // action buttons
@@ -1650,6 +1674,67 @@
 
         function closeTopicEditor() {
             if (openTopicEditor) { openTopicEditor.remove(); openTopicEditor = null; }
+        }
+
+        function closeTopicDetail() {
+            if (openTopicDetail) { openTopicDetail.remove(); openTopicDetail = null; }
+        }
+
+        async function topicShowDetail(li, afterEl, path) {
+            // Toggle off if already open for this path
+            if (openTopicDetail && openTopicDetail.dataset.path === path) {
+                closeTopicDetail();
+                return;
+            }
+            closeTopicDetail();
+            closeTopicEditor();
+
+            const panel = document.createElement('div');
+            panel.className = 'topic-detail-panel';
+            panel.dataset.path = path;
+            panel.innerHTML = '<span style="color:#aaa;font-size:0.9em">Loading…</span>';
+            afterEl.insertAdjacentElement('afterend', panel);
+            openTopicDetail = panel;
+
+            try {
+                const p = new URLSearchParams();
+                p.append('username', encodeParam(username));
+                p.append('password', encodeParam(password));
+                p.append('topic',    encodeParam(path));
+                const r = await fetch(`${API_BASE}/TOPICDETAIL`, {
+                    method:'POST',
+                    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                    body: p.toString()
+                });
+                const detail = JSON.parse(decodeParam(await r.text()));
+                const subs  = detail.subscribers || [];
+                const posts = detail.posters     || [];
+
+                if (subs.length === 0 && posts.length === 0) {
+                    panel.innerHTML = '<span class="topic-detail-empty">No active subscribers or posters for this topic</span>';
+                    return;
+                }
+                let html = '';
+                if (subs.length > 0) {
+                    html += `<div class="topic-detail-section">
+                        <span class="topic-detail-label">📡 Subscribers (${subs.length})</span>
+                        <span class="topic-detail-chips">${subs.map(s =>
+                            `<span class="topic-chip topic-chip-sub">${escapeHtml(s)}</span>`
+                        ).join('')}</span>
+                    </div>`;
+                }
+                if (posts.length > 0) {
+                    html += `<div class="topic-detail-section">
+                        <span class="topic-detail-label">📬 Posters (${posts.length})</span>
+                        <span class="topic-detail-chips">${posts.map(n =>
+                            `<span class="topic-chip topic-chip-post">${escapeHtml(n)}</span>`
+                        ).join('')}</span>
+                    </div>`;
+                }
+                panel.innerHTML = html;
+            } catch(e) {
+                panel.innerHTML = `<span style="color:#c0392b">Error: ${escapeHtml(String(e))}</span>`;
+            }
         }
 
         /* ── API actions ── */
