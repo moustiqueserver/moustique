@@ -1224,6 +1224,9 @@ type TopicDetail struct {
 }
 
 // GetTopicDetail returns subscribers and active posters for the given topic.
+// Posters are collected from two sources:
+//   - b.providers: updated by pub/sub POST operations
+//   - stored value From field: set by PUTVAL operations
 func (b *Broker) GetTopicDetail(topic string) *TopicDetail {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -1233,11 +1236,28 @@ func (b *Broker) GetTopicDetail(topic string) *TopicDetail {
 		subs = append(subs, name)
 	}
 
-	posters := make([]string, 0)
+	// Use a set to deduplicate across both sources
+	posterSet := make(map[string]bool)
+
+	// Source 1: active pub/sub providers
 	for name, provider := range b.providers {
 		if _, ok := provider.LatestPostsByTopic[topic]; ok {
-			posters = append(posters, name)
+			posterSet[name] = true
 		}
+	}
+
+	// Source 2: From field in the stored DB value (set by either PUTVAL or Publish).
+	// After a server restart b.providers is empty, but the DB value retains From.
+	if raw, err := b.db.GetValue(topic); err == nil {
+		var msg Message
+		if json.Unmarshal([]byte(raw), &msg) == nil && msg.From != "" {
+			posterSet[msg.From] = true
+		}
+	}
+
+	posters := make([]string, 0, len(posterSet))
+	for name := range posterSet {
+		posters = append(posters, name)
 	}
 
 	return &TopicDetail{
