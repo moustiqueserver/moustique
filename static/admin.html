@@ -1573,8 +1573,8 @@
 
             // name + value
             const nameEl = document.createElement('span');
-            nameEl.className = 'topic-name topic-name-link';
-            nameEl.title = 'Click to see subscribers & posters';
+            nameEl.className = 'topic-name' + (node.hasVal ? ' topic-name-link' : '');
+            nameEl.title = node.hasVal ? 'Click to see subscribers & posters' : '';
             const icon = isFolder ? '📂' : '📄';
             nameEl.textContent = icon + ' ' + node.name;
             if (node.hasVal) {
@@ -1585,11 +1585,11 @@
                     valSpan.textContent = ' → ' + String(v.message).slice(0, 100);
                     nameEl.appendChild(valSpan);
                 }
+                nameEl.addEventListener('click', e => {
+                    e.stopPropagation();
+                    topicShowDetail(li, row, node.path);
+                });
             }
-            nameEl.addEventListener('click', e => {
-                e.stopPropagation();
-                topicShowDetail(li, row, node.path);
-            });
             row.appendChild(nameEl);
 
             // action buttons

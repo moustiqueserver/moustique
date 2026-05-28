@@ -1231,8 +1231,23 @@ func (b *Broker) GetTopicDetail(topic string) *TopicDetail {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	subs := make([]string, 0)
+	// Collect subscribers: exact match + wildcard patterns that match this topic
+	subSet := make(map[string]bool)
 	for _, name := range b.subscriptions[topic] {
+		subSet[name] = true
+	}
+	// Check wildcard subscription keys (e.g. /sensors/+/temp) that match the concrete topic
+	for _, wildcardPattern := range b.explodeTopic(topic) {
+		for _, name := range b.subscriptions[wildcardPattern] {
+			subSet[name] = true
+		}
+	}
+	// Also check "#" catch-all subscriptions
+	for _, name := range b.subscriptions["#"] {
+		subSet[name] = true
+	}
+	subs := make([]string, 0, len(subSet))
+	for name := range subSet {
 		subs = append(subs, name)
 	}
 
