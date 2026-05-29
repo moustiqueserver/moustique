@@ -22,6 +22,7 @@ type Message struct {
 	UpdatedNiceDatetime string          `json:"updated_nicedatetime"`
 	Subscribers         map[string]bool `json:"subscribers"`
 	IP                  string          `json:"ip"`
+	Posters             map[string]bool `json:"posters,omitempty"`
 }
 
 // Client represents a connected subscriber
@@ -352,6 +353,21 @@ func (b *Broker) Publish(topic, message, from, ip string, updatedTime int64) err
 		}
 	}
 
+	// Accumulate posters across restarts: merge previous Posters map from DB.
+	msg.Posters = map[string]bool{from: true}
+	if raw, err := b.db.GetValue(topic); err == nil {
+		var prev Message
+		if json.Unmarshal([]byte(raw), &prev) == nil {
+			for p := range prev.Posters {
+				msg.Posters[p] = true
+			}
+			// Backward compat: old messages had From but no Posters map.
+			if len(prev.Posters) == 0 && prev.From != "" {
+				msg.Posters[prev.From] = true
+			}
+		}
+	}
+
 	if err := b.db.SaveValue(topic, msg); err != nil {
 		return fmt.Errorf("failed to save value: %w", err)
 	}
@@ -549,6 +565,21 @@ func (b *Broker) PutValue(valname, val, message, from string, updatedTime int64)
 		UpdatedTime:         updatedTime,
 		UpdatedNiceDatetime: formatNiceDateTime(updatedTime),
 		From:                from,
+	}
+
+	// Accumulate posters across restarts: merge previous Posters map from DB.
+	msg.Posters = map[string]bool{from: true}
+	if raw, err := b.db.GetValue(valname); err == nil {
+		var prev Message
+		if json.Unmarshal([]byte(raw), &prev) == nil {
+			for p := range prev.Posters {
+				msg.Posters[p] = true
+			}
+			// Backward compat: old messages had From but no Posters map.
+			if len(prev.Posters) == 0 && prev.From != "" {
+				msg.Posters[prev.From] = true
+			}
+		}
 	}
 
 	return b.db.SaveValue(valname, msg)
@@ -1261,12 +1292,18 @@ func (b *Broker) GetTopicDetail(topic string) *TopicDetail {
 		}
 	}
 
-	// Source 2: From field in the stored DB value (set by either PUTVAL or Publish).
-	// After a server restart b.providers is empty, but the DB value retains From.
+	// Source 2: Posters map in the stored DB value (persists across restarts).
+	// Falls back to From for backward compat with old messages that predate Posters.
 	if raw, err := b.db.GetValue(topic); err == nil {
 		var msg Message
-		if json.Unmarshal([]byte(raw), &msg) == nil && msg.From != "" {
-			posterSet[msg.From] = true
+		if json.Unmarshal([]byte(raw), &msg) == nil {
+			for p := range msg.Posters {
+				posterSet[p] = true
+			}
+			// Backward compat: old message had From but no Posters map.
+			if len(msg.Posters) == 0 && msg.From != "" {
+				posterSet[msg.From] = true
+			}
 		}
 	}
 

@@ -803,7 +803,7 @@
             <button class="tab" onclick="showTab('about', event)">About</button>
         </div>
 
-        <div id="publish-content" class="content-box active">
+        <div id="publish-content" class="content-box">
             <h2 style="margin-bottom: 20px;">Publish Message</h2>
             <div id="publish-error" class="error-msg"></div>
             <div id="publish-success" class="success-msg"></div>
@@ -867,7 +867,7 @@
             </div>
         </div>
 
-        <div id="topics-content" class="content-box">
+        <div id="topics-content" class="content-box active">
             <div class="topics-toolbar">
                 <button class="refresh-btn" onclick="loadTopics()">🔄 Refresh</button>
                 <button class="refresh-btn" onclick="topicsExpandAll()">⊞ Expand all</button>
@@ -1049,6 +1049,7 @@
             document.getElementById('current-user').textContent = username;
             loadStats();
             statsInterval = setInterval(loadStats, 5000);
+            loadTopics();
         }
 
         function showTab(tabName, event) {
