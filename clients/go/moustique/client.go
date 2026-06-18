@@ -22,6 +22,11 @@ type Client struct {
 	Username   string
 	Password   string
 
+	// Verbose styr per-meddelande-loggning (Published to, PutVal). Default false
+	// så att högfrekvent publicering inte fyller stdout/loggfiler. Sätt till true
+	// för felsökning. Subscribe/MQTT-connect-händelser loggas oavsett (sällsynta).
+	Verbose bool
+
 	mu        sync.Mutex
 	callbacks map[string][]func(topic, message, from string)
 
@@ -140,7 +145,9 @@ func (c *Client) Publish(topic, message string) error {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("publish failed: %d %s", resp.StatusCode, string(body))
 	}
-	fmt.Printf("Published to %s\n", topic)
+	if c.Verbose {
+		fmt.Printf("Published to %s\n", topic)
+	}
 	return nil
 }
 
@@ -165,7 +172,9 @@ func (c *Client) PutVal(topic, value string) error {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("putval failed: %d %s", resp.StatusCode, string(body))
 	}
-	fmt.Printf("PutVal %s = %s\n", topic, value)
+	if c.Verbose {
+		fmt.Printf("PutVal %s = %s\n", topic, value)
+	}
 	return nil
 }
 
